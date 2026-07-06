@@ -71,4 +71,71 @@ describe("finch CLI arg parsing / exit codes", () => {
       data: { configured: false, valid: false, username: null },
     });
   });
+
+  test("config path prints the resolved path without requiring a config file", () => {
+    const { exitCode, stdout } = runCli(["config", "path", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data.path).toMatch(/\.finch\/config$/);
+  });
+
+  test("config get with no config exits 3 with an AUTH_ERROR JSON envelope", () => {
+    const { exitCode, stdout } = runCli(["config", "get", "transport", "--json"]);
+
+    expect(exitCode).toBe(3);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("AUTH_ERROR");
+  });
+
+  test("schema outputs a JSON document describing every command", () => {
+    const { exitCode, stdout } = runCli(["schema", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+    expect(envelope.data.commands.length).toBeGreaterThan(15);
+    const names = envelope.data.commands.map((c: { name: string }) => c.name);
+    expect(names).toContain("config get");
+    expect(names).toContain("post");
+  });
+
+  test("--describe works as a global-flag alias for `finch schema`", () => {
+    const { exitCode, stdout } = runCli(["--describe"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+  });
+
+  test("a literal '--describe' positional after the `--` terminator is NOT hijacked into schema output", () => {
+    // Mirrors the M3 flag-injection protection parseArgs already gives every
+    // command: free-text/positional arguments after `--` must be taken
+    // literally, even if they happen to equal a registered global flag
+    // string. `finch like -- --describe` should fail extractTweetId's
+    // validation (not a valid post ID/URL), not succeed as the schema doc.
+    const { exitCode, stdout } = runCli(["like", "--", "--describe"]);
+
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(exitCode).toBe(2);
+  });
+
+  test("a literal '--json' positional after the `--` terminator is NOT silently stripped", () => {
+    // Same terminator-boundary bug class as --describe above, but with a
+    // data-loss consequence instead of a misrouted command: post text of
+    // exactly "--json" (e.g. from an MCP tool call) must survive intact,
+    // not get deleted by the global --json flag filter.
+    const { exitCode, stdout } = runCli(["post", "--dry-run", "--", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data).toEqual({ dryRun: true, wouldSend: { text: "--json" } });
+  });
 });

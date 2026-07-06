@@ -79,3 +79,18 @@ export function resolveAuthConfig(): FinchAuthConfig | null {
   const config = readConfig();
   return config?.auth ?? null;
 }
+
+const SECRET_VISIBLE_SUFFIX_LENGTH = 4;
+const SECRET_MASK_CHAR = "*";
+
+// Never prints an auth.* value in full, per PLAN.md's "never logged / never
+// echoed" invariant — masks all but the last 4 characters, or the whole
+// value for anything at or below that length (revealing "all but 4" of a
+// 4-character-or-shorter secret would be the whole secret).
+export function maskSecret(value: string): string {
+  if (value.length <= SECRET_VISIBLE_SUFFIX_LENGTH) {
+    return SECRET_MASK_CHAR.repeat(value.length);
+  }
+  const hiddenLength = value.length - SECRET_VISIBLE_SUFFIX_LENGTH;
+  return SECRET_MASK_CHAR.repeat(hiddenLength) + value.slice(-SECRET_VISIBLE_SUFFIX_LENGTH);
+}

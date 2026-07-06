@@ -16,6 +16,9 @@ import { runRepost } from "./commands/repost";
 import { runUnrepost } from "./commands/unrepost";
 import { runFollow } from "./commands/follow";
 import { runUnfollow } from "./commands/unfollow";
+import { runConfigGet, runConfigSet, runConfigPath } from "./commands/config";
+import { runSchema } from "./commands/schema";
+import { resolveDispatchArgs } from "./core/dispatch-args";
 import { runMcp } from "./mcp/server";
 
 async function dispatch(args: string[]): Promise<{ data: unknown; human: string }> {
@@ -72,6 +75,18 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   if (cmd === "unfollow") {
     return runUnfollow(args.slice(1));
   }
+  if (cmd === "config" && sub === "get") {
+    return runConfigGet(args.slice(2));
+  }
+  if (cmd === "config" && sub === "set") {
+    return runConfigSet(args.slice(2));
+  }
+  if (cmd === "config" && sub === "path") {
+    return runConfigPath(args.slice(2));
+  }
+  if (cmd === "schema") {
+    return runSchema();
+  }
 
   throw new FinchError("USAGE_ERROR", `Unknown command: ${args.join(" ") || "(none)"}`);
 }
@@ -88,8 +103,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const jsonMode = argv.includes("--json") || !process.stdout.isTTY;
-  const args = argv.filter((a) => a !== "--json");
+  // `--json` and `--describe` (the latter a global-flag alias for `finch
+  // schema` — PLAN.md's agent-hardening section mentions both forms) are
+  // only recognized/stripped before a `--` terminator; everything at or
+  // after it is caller-supplied free text (an MCP tool's post/reply text, a
+  // search query, ...) that must be taken literally, per the same
+  // terminator convention parseArgs enforces for every command. See
+  // core/dispatch-args.ts for why this can't just scan the raw argv.
+  const { jsonMode, args } = resolveDispatchArgs(argv, process.stdout.isTTY);
 
   try {
     const { data, human } = await dispatch(args);
