@@ -114,6 +114,59 @@ describe("createTools", () => {
     expect(capturedCount).toBe(5);
   });
 
+  test("post_tweet sends a text value that literally equals '--dry-run' as real text, not the flag", async () => {
+    const transport = fakeTransport({ createTweet: async (text) => ({ id: "1", text }) });
+    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+
+    const result = await toolByName(tools, "post_tweet").handler({ text: "--dry-run" });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual({ id: "1", text: "--dry-run" });
+  });
+
+  test("post_thread sends a text value that literally equals '--file' as a real thread post, not the flag", async () => {
+    const ids: string[] = [];
+    const transport = fakeTransport({
+      createTweet: async (text) => {
+        const id = String(ids.length + 1);
+        ids.push(id);
+        return { id, text };
+      },
+    });
+    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+
+    const result = await toolByName(tools, "post_thread").handler({ texts: ["--file", "second post"] });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual({ ids: ["1", "2"], count: 2 });
+  });
+
+  test("like_tweet sends an idOrUrl value that literally equals '--dry-run' as a real id, not the flag", async () => {
+    let capturedTweetId: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+      like: async (_userId, tweetId) => {
+        capturedTweetId = tweetId;
+        return { liked: true };
+      },
+    });
+    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+
+    // "--dry-run" isn't a valid tweet id/URL, so a correctly-positional
+    // "--dry-run" must fail extractTweetId's own validation (a distinct
+    // message) rather than being silently swallowed as the --dry-run flag —
+    // which would instead short-circuit to a `{dryRun: true, ...}` success
+    // result without ever reaching extractTweetId or the transport.
+    const result = await toolByName(tools, "like_tweet").handler({ idOrUrl: "--dry-run" });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "Not a valid post ID or URL: --dry-run",
+    });
+    expect(capturedTweetId).toBeUndefined();
+  });
+
   test("whoami takes no input and wraps runWhoami", async () => {
     const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),

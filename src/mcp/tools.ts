@@ -36,10 +36,18 @@ export interface ToolDefinition {
 // input back into that argv shape reuses the exact same parseArgs/validation/
 // dry-run/error path the CLI takes, rather than re-implementing any of it
 // for the MCP surface.
+//
+// Flags are emitted first, followed by a `--` terminator, with the
+// caller-supplied positionals (untrusted MCP tool input — post text, search
+// query, username, id-or-URL, ...) always last. Without the terminator, a
+// positional value that happens to literally equal a registered flag string
+// (e.g. `post_tweet` called with `{text: "--dry-run"}`) would be
+// misinterpreted by parseArgs as that flag instead of taken literally.
 function buildArgv(positionals: string[], opts: { count?: number; dryRun?: boolean } = {}): string[] {
-  const argv = [...positionals];
+  const argv: string[] = [];
   if (opts.count !== undefined) argv.push("-n", String(opts.count));
   if (opts.dryRun) argv.push("--dry-run");
+  argv.push("--", ...positionals);
   return argv;
 }
 
