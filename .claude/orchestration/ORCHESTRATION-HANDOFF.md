@@ -1,66 +1,37 @@
-STATE-AT-RESET (2026-07-06): CEO build-greenlight received: LOW PRIORITY, RELAXED pace, cap
-1-2 light seats, Codex OFF, GLM/Kimi sparing, reviews via agy/Gemini, full gates
-(review+AC+CI-green) before merge, PING CEO the moment `finch auth`/config is testable.
-Mid-build, CEO reviewed PLAN.md and mandated the official X TypeScript SDK
-(`@xdevplatform/xdk`) over hand-rolled OAuth1.0a signing — locked in (commit 675d0f2).
+STATE-AT-RESET (2026-07-06): all v1 CLI/MCP slices merged to `main` — auth/config (`finch
+auth`/`auth status`/`whoami`/`config get,set,path`), read (`timeline`/`search`/
+`user-posts`/`user`/`show`), write (`post`/`reply`/`thread`), engage
+(`like`/`unlike`/`repost`/`unrepost`/`follow`/`unfollow`), `finch schema`/`--describe`, and the
+bundled MCP server. Tagged `v0.1.0` (pushed to remote — `push.followTags=true` in git config
+did this automatically on an unrelated push, flagged to the CEO). Remaining v1 scope:
+Homebrew/distribution (M4) and hardening (M5) — see Linear (below).
 
-**M1 slice 1 — MERGED to main (commit b6c7052, `main`).** Bun/TS scaffold, `~/.finch/config`
-schema (0600 file + 0700 dir), `XTransport`/`ByokTransport` wrapping the SDK, `finch
-auth`/`auth status`/`whoami`, universal `--json`+exit codes. CEO live-tested `finch auth`
-against his real X keys end to end — works. Gates run: independent review (Gemini 3.1 Pro via
-`agy`) found 3 high-severity + 2 lower-severity issues, all verified against the actual
-code/SDK types (one review finding was refuted after checking the SDK's real type defs — not
-blindly trusted), fixed with regression tests, re-verified (typecheck clean, 47 tests pass),
-then AC-verified against docs/PLAN.md before merge. Worktree `../finch-wt/m1-scaffold-core`
-(branch `m1-scaffold-core`) is done; builder seat (surface:199) is being cleared and re-cast
-for the next slice, not closed.
+**Infra:** GitHub remote is live — `github.com/kellykampen/finch` (private). CI
+(`.github/workflows/ci.yml`: typecheck + test + build smoke via `finch auth status --json`)
+runs on every PR and push to `main`. Every merge from here forward goes through a real GitHub
+PR with two evidence comments (independent review + AC-verification) and green CI before
+`gh pr merge` — see `fleet-rules.md` rule 10 for the full gate spec, rule 11 for quota rules.
 
-**Flagged, not yet resolved by CEO:**
-1. No GitHub remote yet — "CI-green" and "posted on the PR" gate halves can't be literally
-   satisfied until one exists. Local branch + diff-model review + manual AC-verification
-   substitutes for now; creating a remote is a decision to surface, not make unilaterally.
-2. M1's planned biome/lint setup was deferred by the builder as scope creep beyond slice 1 —
-   still an open follow-up, not yet scheduled to a slice.
-3. **Security note**: during the review-fix round, the builder seat incidentally read the
-   CEO's real `~/.finch/config` (live credentials from his end-to-end test) while
-   sanity-checking file permissions on the actual host `$HOME` (not a sandboxed one) — it
-   self-reported this, fixed only the directory's permissions, and did not otherwise use the
-   credentials. Flagged to the CEO directly; recommend treating those 4 X API credentials as
-   exposed and rotating them out of caution.
+**Linear:** team `FIN` (Fibonacci estimates on — set via raw GraphQL `teamUpdate`, the
+`linear-cli` wrapper has no flag for it), project "Finch v1", milestones M0–M5, issues FIN-1
+through FIN-31 (auth/config/read/write/engage/MCP marked Done; distribution + hardening
+Todo). This file + Linear are now both tracking sources; Linear is authoritative for
+issue-level status, this file for fleet/session state.
 
-**M2 (write/read) — MERGED to main (commit 1075dd1).** post/reply/thread + timeline/search/
-user-posts/user/show, extending XTransport/ByokTransport with createTweet/getTweet/
-searchRecent/userTweets/homeTimeline/getUserByUsername — method names confirmed against
-`@xdevplatform/xdk@0.5.0`'s actual type defs, no SDK gaps found. `--dry-run` added to the 3
-mutating commands per the agent-hardening section. Gates: independent review (Gemini 3.1 Pro
-via agy) came back clean (no high-severity findings) — 3 low-severity items fixed
-(positional-text trimming, thread `--file`/positional mutual exclusivity, deduped
-`formatPosts` helper), one optimization note deferred as backlog (cache the user id in config
-to cut `finch timeline`'s 2 API calls to 1 — needs a config schema change, not done). 122
-tests pass, typecheck clean, independently re-verified before merge. Worktrees
-`../finch-wt/m1-scaffold-core` and `../finch-wt/m2-write-read` still exist on disk (branches
-merged, not yet pruned) — builder seat for M2 cleared/closed per the "seat lives for one task"
-rule.
+**CEO pacing directive (current, standing until told otherwise): THROTTLED.** Max 1 worker
+seat at a time, finish one task fully before starting the next. Prefer non-Claude harnesses
+for builds where suitable (GLM/Kimi sparingly — also over-pace; Codex is OFF fleet-wide);
+`agy` for reviews, rotating Gemini 3.1 Pro and GPT-OSS 120B (GPT-OSS proved unreliable on
+complex review prompts this session — failed silently twice, see git log around PR #1's
+review comments; fell back to Gemini both times, worth re-testing before trusting it again).
+Reserve Fable/Claude seats for what genuinely needs them. Longer intervals between dispatches,
+relaxed poll cadence, keep the QC gates. **Currently: coasting at a clean stopping point — no
+seat is cast, no worktree is open.** Do not start the next slice (distribution or hardening)
+without an explicit go-ahead.
 
-**M3 (engage + MCP) — MERGED to main (commit ece4d7d).** `finch like/unlike/repost/unrepost/
-follow/unfollow` on the confirmed SDK methods (`likePost`/`unlikePost`/`repostPost`/
-`unrepostPost`/`followUser`/`unfollowUser`); bundled MCP server (`finch mcp`, stdio,
-`@modelcontextprotocol/sdk`) with one tool per command, wrapping the same core `run*`
-functions the CLI uses (no reimplementation). Gates: independent review (Gemini 3.1 Pro via
-agy) found one real high-severity bug — MCP tools bridged untrusted free-text input into the
-CLI's argv-based `parseArgs` with no boundary, so caller text literally equal to a flag string
-(e.g. `{text: "--dry-run"}`) was silently misinterpreted as that flag. Verified against the
-code, fixed with a standard `--` end-of-flags terminator + regression tests. 181 tests pass,
-typecheck clean, independently re-verified before merge. M3 seat closed (task done+merged).
-Standing rule from the CEO: don't park after a milestone merges — immediately pull the next
-one, seat cast, poll to done.
-
-**Next slice (in progress):** `finch config get/set/path` + `finch schema` introspection
-(the M1-scoped agent-hardening addition, not yet built) — the remaining CLI-completeness
-items before M4 (distribution/brew) and M5 (hardening). Worktree `../finch-wt/m4-config-schema`
-(branch `m4-config-schema`).
-
-**Housekeeping (not urgent):** worktrees `m1-scaffold-core`, `m2-write-read`, `m3-engage-mcp`
-still exist on disk with their branches merged — not yet pruned via `git worktree remove`.
-
-No Linear team — this file + docs/PLAN.md are the tracking source of record.
+**Known open items (not blocking, not forgotten):**
+1. Rotate the CEO's 4 X API credentials (FIN-30) — a builder seat incidentally viewed the real
+   `~/.finch/config` during the M1 review-fix round.
+2. biome/lint conventions still not set up (FIN-29, M5).
+3. `finch timeline`'s 2-API-call cost (getMe + homeTimeline) could drop to 1 by caching the
+   user id in config — noted, not scheduled.
