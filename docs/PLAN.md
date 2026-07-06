@@ -246,6 +246,46 @@ shape from the table above (no `--json`-vs-table branching inside MCP — it's J
 construction). Errors surface as MCP tool errors carrying the same `{code, message, detail}`
 shape rather than being swallowed into a generic failure string.
 
+## Agent-interface hardening (from the found "building for agents" reference)
+
+While mapping the fleet's panes to find where to report this plan, a browser tab was found
+open (Personal workspace) on "You Need to Rewrite Your CLI for AI Agents"
+(justin.poehnelt.com) — a strong candidate for the "building for agents" doc the brief said
+the CEO referenced but didn't come through. Treating it as a candidate, not confirmed — flag
+to the CEO for a one-line "yes that's it" before treating it as locked. It validates two
+choices already made above (env-var credential injection over a browser-redirect OAuth flow;
+a bundled MCP surface alongside the CLI) and suggests concrete additions worth folding into
+the spec now rather than retrofitting later:
+
+- **`--dry-run` on every mutating command** (`post`, `reply`, `thread`, `like`, `unlike`,
+  `repost`, `unrepost`, `follow`, `unfollow`) — validates args and prints what would be sent
+  (`{ok: true, data: {dryRun: true, wouldSend: {...}}}`) without calling the X API. Cheap to
+  add now (one flag check before the transport call in each core function); expensive to
+  retrofit once agents depend on the commands' side-effecting behavior.
+- **`finch schema` / `--describe`** — a runtime-introspectable command listing every command's
+  name, flags, X API endpoint, and JSON output shape as a single JSON document (effectively
+  this plan's command-spec table, machine-readable). Lets an agent harness discover Finch's
+  full surface without parsing `--help` text or hardcoding it.
+- **Input validation on every id/URL/text argument** — reject control characters (below ASCII
+  0x20) in post text and reject a tweet-id argument that's actually a URL with unexpected query
+  params, before it reaches the API. Applies the article's "assume inputs can be adversarial
+  even from agents" principle to the `extractTweetId`-style helper already planned above.
+  Also a hedge against unsanitized text (Finch is CLI-only, no file-path args to sandbox in
+  v1's write commands, so path-traversal hardening doesn't apply beyond the config file itself).
+- **Prompt-injection awareness on read output** — `timeline`/`search`/`user-posts`/`show`
+  return other users' raw tweet text verbatim; that text is untrusted input to whatever agent
+  consumes Finch's JSON. Finch's job is to pass it through faithfully (not silently sanitize
+  someone's tweet), but this is worth one line in Finch's own docs/skill file so agents built
+  on Finch know to treat tweet `text` fields as untrusted data, not instructions.
+- **A bundled skill/context file** (the article's "ship skill files with YAML-frontmatter
+  Markdown") — ship a `SKILL.md`-shaped file describing Finch's JSON contract, exit codes, and
+  the untrusted-tweet-text note above, installable alongside the binary, so an agent harness
+  onboarding Finch gets the invariants that don't fit in `--help`.
+
+These are additions to, not replacements for, the v1 command spec above — recommend folding
+`--dry-run` and `finch schema` into M2/M1 respectively once greenlit; the rest are
+documentation/validation hardening threaded through existing milestones.
+
 ## Distribution: Bun single binary + Homebrew
 
 1. **Build**: `bun build --compile ./src/index.ts --outfile finch` per target
@@ -327,10 +367,11 @@ point in its favor, but this is a phase-2 decision to make when phase 2 is green
 
 ## Open questions / escalations (per boot directive, surfacing rather than guessing)
 
-1. **"Building for agents" reference doc is still missing** (brief flags this itself) — the
-   agent-interface section above (`--json`, exit codes, MCP surface) is written from the
-   locked decisions in the brief plus general priors; it should be revisited once that doc
-   lands, in case it prescribes a different error-object shape or MCP conventions.
+1. **"Building for agents" reference doc** — likely found (see "Agent-interface hardening"
+   section above: a browser tab already open on justin.poehnelt.com's "You Need to Rewrite
+   Your CLI for AI Agents"). Its recommendations are folded in above, but it's a candidate,
+   not a confirmed match — needs a one-line CEO confirmation that this is the referenced doc
+   before treating its guidance as locked rather than "recommended."
 2. **`finch show <id>`** (fetch a single post) isn't explicitly in the brief's locked v1
    scope but is implied by `reply`'s id/URL resolution and matches usesocial.dev's `tweet`
    command — recommend including it in M1; flagging rather than assuming.
