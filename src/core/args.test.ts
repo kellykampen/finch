@@ -22,6 +22,28 @@ describe("parseArgs", () => {
   test("throws USAGE_ERROR when a value flag is missing its value", () => {
     expect(() => parseArgs(["--file"], { valueFlags: ["--file"] })).toThrow(FinchError);
   });
+
+  test("'--' forces everything after it to be positional, even a token matching a bool flag", () => {
+    const result = parseArgs(["--", "--dry-run"], { boolFlags: ["--dry-run"] });
+    expect(result.bools["--dry-run"]).toBeUndefined();
+    expect(result.positionals).toEqual(["--dry-run"]);
+  });
+
+  test("'--' forces everything after it to be positional, even a token matching a value flag", () => {
+    const result = parseArgs(["--", "--file", "path.txt"], { valueFlags: ["--file"] });
+    expect(result.values["--file"]).toBeUndefined();
+    expect(result.positionals).toEqual(["--file", "path.txt"]);
+  });
+
+  test("flags before '--' are still recognized normally", () => {
+    const result = parseArgs(["-n", "5", "--", "hello"], { valueFlags: ["-n"] });
+    expect(result.values["-n"]).toBe("5");
+    expect(result.positionals).toEqual(["hello"]);
+  });
+
+  test("the '--' token itself is not included in positionals", () => {
+    expect(parseArgs(["--", "a", "b"]).positionals).toEqual(["a", "b"]);
+  });
 });
 
 describe("resolveCount", () => {

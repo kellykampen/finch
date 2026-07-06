@@ -21,6 +21,12 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     userTweets: notImplemented("userTweets"),
     homeTimeline: notImplemented("homeTimeline"),
     getUserByUsername: notImplemented("getUserByUsername"),
+    like: notImplemented("like"),
+    unlike: notImplemented("unlike"),
+    retweet: notImplemented("retweet"),
+    unretweet: notImplemented("unretweet"),
+    follow: notImplemented("follow"),
+    unfollow: notImplemented("unfollow"),
     ...overrides,
   };
 }

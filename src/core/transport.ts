@@ -28,6 +28,18 @@ export interface CreatedTweet {
   text: string;
 }
 
+export interface LikeStatus {
+  liked: boolean;
+}
+
+export interface RepostStatus {
+  reposted: boolean;
+}
+
+export interface FollowStatus {
+  following: boolean;
+}
+
 /**
  * Every core command function depends on this interface, never on the SDK
  * directly — ByokTransport is v1's only implementation; a phase-2
@@ -41,6 +53,12 @@ export interface XTransport {
   userTweets(userId: string, maxResults: number): Promise<FinchTweet[]>;
   homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
+  like(userId: string, tweetId: string): Promise<LikeStatus>;
+  unlike(userId: string, tweetId: string): Promise<LikeStatus>;
+  retweet(userId: string, tweetId: string): Promise<RepostStatus>;
+  unretweet(userId: string, tweetId: string): Promise<RepostStatus>;
+  follow(userId: string, targetUserId: string): Promise<FollowStatus>;
+  unfollow(userId: string, targetUserId: string): Promise<FollowStatus>;
 }
 
 interface GetMeResult {
@@ -82,6 +100,16 @@ interface ListOptions {
   tweetFields?: string[];
 }
 
+// The engagement endpoints' response `data` is untyped in the SDK
+// (`Record<string, any>`) — X does return a `{liked: bool}`/`{retweeted:
+// bool}`/`{following: bool}` field, but since it's unconfirmed at the type
+// level, ByokTransport treats it as an existence check and falls back to the
+// known post/pre-condition boolean when the field itself is absent.
+interface EngageActionResult {
+  data?: Record<string, unknown>;
+  errors?: unknown;
+}
+
 interface UsersClientLike {
   getMe(): Promise<GetMeResult>;
   getByUsername(
@@ -90,6 +118,12 @@ interface UsersClientLike {
   ): Promise<ItemResult<UserLike>>;
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  likePost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
+  unlikePost(id: string, tweetId: string): Promise<EngageActionResult>;
+  repostPost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
+  unrepostPost(id: string, sourceTweetId: string): Promise<EngageActionResult>;
+  followUser(id: string, options: { body: { targetUserId: string } }): Promise<EngageActionResult>;
+  unfollowUser(sourceUserId: string, targetUserId: string): Promise<EngageActionResult>;
 }
 
 interface PostsClientLike {
@@ -221,6 +255,84 @@ export class ByokTransport implements XTransport {
         description: res.data.description ?? "",
         public_metrics: res.data.publicMetrics ?? {},
       };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async like(userId: string, tweetId: string): Promise<LikeStatus> {
+    try {
+      const res = await this.usersClient.likePost(userId, { body: { tweetId } });
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the like", res.errors ?? null);
+      }
+      return { liked: (res.data.liked as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async unlike(userId: string, tweetId: string): Promise<LikeStatus> {
+    try {
+      const res = await this.usersClient.unlikePost(userId, tweetId);
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the unlike", res.errors ?? null);
+      }
+      return { liked: (res.data.liked as boolean | undefined) ?? false };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async retweet(userId: string, tweetId: string): Promise<RepostStatus> {
+    try {
+      const res = await this.usersClient.repostPost(userId, { body: { tweetId } });
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the repost", res.errors ?? null);
+      }
+      return { reposted: (res.data.retweeted as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async unretweet(userId: string, tweetId: string): Promise<RepostStatus> {
+    try {
+      const res = await this.usersClient.unrepostPost(userId, tweetId);
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the unrepost", res.errors ?? null);
+      }
+      return { reposted: (res.data.retweeted as boolean | undefined) ?? false };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async follow(userId: string, targetUserId: string): Promise<FollowStatus> {
+    try {
+      const res = await this.usersClient.followUser(userId, { body: { targetUserId } });
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the follow", res.errors ?? null);
+      }
+      return { following: (res.data.following as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async unfollow(userId: string, targetUserId: string): Promise<FollowStatus> {
+    try {
+      const res = await this.usersClient.unfollowUser(userId, targetUserId);
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the unfollow", res.errors ?? null);
+      }
+      return { following: (res.data.following as boolean | undefined) ?? false };
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err);

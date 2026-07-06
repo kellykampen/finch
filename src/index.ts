@@ -10,6 +10,13 @@ import { runSearch } from "./commands/search";
 import { runUserPosts } from "./commands/user-posts";
 import { runUser } from "./commands/user";
 import { runShow } from "./commands/show";
+import { runLike } from "./commands/like";
+import { runUnlike } from "./commands/unlike";
+import { runRepost } from "./commands/repost";
+import { runUnrepost } from "./commands/unrepost";
+import { runFollow } from "./commands/follow";
+import { runUnfollow } from "./commands/unfollow";
+import { runMcp } from "./mcp/server";
 
 async function dispatch(args: string[]): Promise<{ data: unknown; human: string }> {
   const [cmd, sub] = args;
@@ -47,12 +54,40 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   if (cmd === "show") {
     return runShow(args.slice(1));
   }
+  if (cmd === "like") {
+    return runLike(args.slice(1));
+  }
+  if (cmd === "unlike") {
+    return runUnlike(args.slice(1));
+  }
+  if (cmd === "repost") {
+    return runRepost(args.slice(1));
+  }
+  if (cmd === "unrepost") {
+    return runUnrepost(args.slice(1));
+  }
+  if (cmd === "follow") {
+    return runFollow(args.slice(1));
+  }
+  if (cmd === "unfollow") {
+    return runUnfollow(args.slice(1));
+  }
 
   throw new FinchError("USAGE_ERROR", `Unknown command: ${args.join(" ") || "(none)"}`);
 }
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+
+  // `finch mcp` starts a long-lived stdio server instead of the normal
+  // dispatch-one-command-and-exit flow — it never reaches the JSON/exit-code
+  // envelope below, since MCP has its own JSON-RPC framing over the same
+  // stdio streams.
+  if (argv[0] === "mcp") {
+    await runMcp();
+    return;
+  }
+
   const jsonMode = argv.includes("--json") || !process.stdout.isTTY;
   const args = argv.filter((a) => a !== "--json");
 
