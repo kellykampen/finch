@@ -28,8 +28,23 @@ for the next slice, not closed.
    credentials. Flagged to the CEO directly; recommend treating those 4 X API credentials as
    exposed and rotating them out of caution.
 
-**Next slice (in progress):** post/reply/thread + timeline/search on the SDK, per
-docs/PLAN.md's Write/Read command tables. New worktree/branch to be created; same gate
-process (independent review + AC-verify) before it merges.
+**M2 (write/read) — MERGED to main (commit 1075dd1).** post/reply/thread + timeline/search/
+user-posts/user/show, extending XTransport/ByokTransport with createTweet/getTweet/
+searchRecent/userTweets/homeTimeline/getUserByUsername — method names confirmed against
+`@xdevplatform/xdk@0.5.0`'s actual type defs, no SDK gaps found. `--dry-run` added to the 3
+mutating commands per the agent-hardening section. Gates: independent review (Gemini 3.1 Pro
+via agy) came back clean (no high-severity findings) — 3 low-severity items fixed
+(positional-text trimming, thread `--file`/positional mutual exclusivity, deduped
+`formatPosts` helper), one optimization note deferred as backlog (cache the user id in config
+to cut `finch timeline`'s 2 API calls to 1 — needs a config schema change, not done). 122
+tests pass, typecheck clean, independently re-verified before merge. Worktrees
+`../finch-wt/m1-scaffold-core` and `../finch-wt/m2-write-read` still exist on disk (branches
+merged, not yet pruned) — builder seat for M2 cleared/closed per the "seat lives for one task"
+rule.
+
+**Remaining v1 scope (not started):** engage commands (like/unlike/repost/unrepost/
+follow/unfollow — natural next slice), `finch config get/set/path`, `finch schema`
+introspection (M1-scoped in PLAN.md but not yet built), MCP server (M3), distribution/brew
+(M4), hardening pass (M5).
 
 No Linear team — this file + docs/PLAN.md are the tracking source of record.
