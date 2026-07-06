@@ -105,12 +105,18 @@ against — not before, and not for the planning phase this doc covers.
   Resolved Decisions below), copied verbatim from the X Developer Portal's "Keys and tokens"
   page for the operator's own app:**
 
-  | Config field | X Developer Portal source | Used for |
-  |---|---|---|
-  | `auth.apiKey` | "API Key" (a.k.a. Consumer Key) | Signing every request |
-  | `auth.apiKeySecret` | "API Key Secret" (a.k.a. Consumer Secret) | Signing every request |
-  | `auth.accessToken` | "Access Token" (under "Access Token and Secret", user-context) | Identifies the acting account |
-  | `auth.accessTokenSecret` | "Access Token Secret" | Signing every request |
+  | Config field | X Developer Portal source | `finch auth` prompt label | Used for |
+  |---|---|---|---|
+  | `auth.apiKey` | "Consumer Key" (older UI/docs: "API Key") | `Consumer Key:` | Signing every request |
+  | `auth.apiKeySecret` | "Consumer Secret" (older UI/docs: "API Key Secret") | `Consumer Secret:` | Signing every request |
+  | `auth.accessToken` | "Access Token" (under "Access Token and Secret", user-context) | `Access Token:` | Identifies the acting account |
+  | `auth.accessTokenSecret` | "Access Token Secret" | `Access Token Secret:` | Signing every request |
+
+  **CEO-confirmed copy fix**: the `finch auth` wizard's prompt text says "Consumer
+  Key"/"Consumer Secret" to match X's current developer-portal terminology — only the
+  user-facing prompt labels changed. Internal field names (`auth.apiKey`, `auth.apiKeySecret`)
+  and the env-var overrides (`FINCH_API_KEY`, `FINCH_API_KEY_SECRET`) are unchanged,
+  deliberately, to stay non-breaking for anything already reading/setting them.
 
   All four are required for v1 — read commands, write commands, and engagement commands all
   need OAuth 1.0a User Context (X API v2 does not offer an app-only/bearer-only path for
