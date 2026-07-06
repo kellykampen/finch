@@ -42,9 +42,25 @@ tests pass, typecheck clean, independently re-verified before merge. Worktrees
 merged, not yet pruned) — builder seat for M2 cleared/closed per the "seat lives for one task"
 rule.
 
-**Remaining v1 scope (not started):** engage commands (like/unlike/repost/unrepost/
-follow/unfollow — natural next slice), `finch config get/set/path`, `finch schema`
-introspection (M1-scoped in PLAN.md but not yet built), MCP server (M3), distribution/brew
-(M4), hardening pass (M5).
+**M3 (engage + MCP) — MERGED to main (commit ece4d7d).** `finch like/unlike/repost/unrepost/
+follow/unfollow` on the confirmed SDK methods (`likePost`/`unlikePost`/`repostPost`/
+`unrepostPost`/`followUser`/`unfollowUser`); bundled MCP server (`finch mcp`, stdio,
+`@modelcontextprotocol/sdk`) with one tool per command, wrapping the same core `run*`
+functions the CLI uses (no reimplementation). Gates: independent review (Gemini 3.1 Pro via
+agy) found one real high-severity bug — MCP tools bridged untrusted free-text input into the
+CLI's argv-based `parseArgs` with no boundary, so caller text literally equal to a flag string
+(e.g. `{text: "--dry-run"}`) was silently misinterpreted as that flag. Verified against the
+code, fixed with a standard `--` end-of-flags terminator + regression tests. 181 tests pass,
+typecheck clean, independently re-verified before merge. M3 seat closed (task done+merged).
+Standing rule from the CEO: don't park after a milestone merges — immediately pull the next
+one, seat cast, poll to done.
+
+**Next slice (in progress):** `finch config get/set/path` + `finch schema` introspection
+(the M1-scoped agent-hardening addition, not yet built) — the remaining CLI-completeness
+items before M4 (distribution/brew) and M5 (hardening). Worktree `../finch-wt/m4-config-schema`
+(branch `m4-config-schema`).
+
+**Housekeeping (not urgent):** worktrees `m1-scaffold-core`, `m2-write-read`, `m3-engage-mcp`
+still exist on disk with their branches merged — not yet pruned via `git worktree remove`.
 
 No Linear team — this file + docs/PLAN.md are the tracking source of record.
