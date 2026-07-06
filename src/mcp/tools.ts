@@ -1,0 +1,203 @@
+import { z } from "zod";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { FinchAuthConfig } from "../core/config";
+import type { XTransport } from "../core/transport";
+import { FinchError } from "../core/errors";
+import { runPost } from "../commands/post";
+import { runReply } from "../commands/reply";
+import { runThread } from "../commands/thread";
+import { runTimeline } from "../commands/timeline";
+import { runSearch } from "../commands/search";
+import { runUserPosts } from "../commands/user-posts";
+import { runUser } from "../commands/user";
+import { runShow } from "../commands/show";
+import { runLike } from "../commands/like";
+import { runUnlike } from "../commands/unlike";
+import { runRepost } from "../commands/repost";
+import { runUnrepost } from "../commands/unrepost";
+import { runFollow } from "../commands/follow";
+import { runUnfollow } from "../commands/unfollow";
+import { runWhoami } from "../commands/whoami";
+
+export interface McpToolDeps {
+  resolveAuth?: () => FinchAuthConfig | null;
+  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, z.ZodTypeAny>;
+  handler: (args: Record<string, unknown>) => Promise<CallToolResult>;
+}
+
+// Every command function already accepts a CLI-shaped `argv: string[]` (plus
+// the same DI `deps` every command test uses) — bridging structured MCP tool
+// input back into that argv shape reuses the exact same parseArgs/validation/
+// dry-run/error path the CLI takes, rather than re-implementing any of it
+// for the MCP surface.
+function buildArgv(positionals: string[], opts: { count?: number; dryRun?: boolean } = {}): string[] {
+  const argv = [...positionals];
+  if (opts.count !== undefined) argv.push("-n", String(opts.count));
+  if (opts.dryRun) argv.push("--dry-run");
+  return argv;
+}
+
+// Wraps a core command call so every tool's success/error shape is uniform:
+// success mirrors the CLI's `--json` `data` field exactly (PLAN.md requires
+// MCP tool output be that same shape); failure carries FinchError's
+// {code, message, detail} rather than collapsing to a generic error string.
+async function runTool(fn: () => Promise<{ data: unknown }>): Promise<CallToolResult> {
+  try {
+    const { data } = await fn();
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: data as Record<string, unknown>,
+    };
+  } catch (err) {
+    const finchError =
+      err instanceof FinchError
+        ? err
+        : new FinchError("INTERNAL_ERROR", err instanceof Error ? err.message : String(err));
+    const errorPayload = {
+      code: finchError.code,
+      message: finchError.message,
+      detail: finchError.detail,
+    };
+    return {
+      isError: true,
+      content: [{ type: "text", text: JSON.stringify(errorPayload) }],
+      structuredContent: errorPayload,
+    };
+  }
+}
+
+/** Builds the MCP tool surface — one tool per PLAN.md's MCP server table, each wrapping the same core command function the CLI dispatches to. */
+export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
+  return [
+    {
+      name: "post_tweet",
+      description: "Create a top-level post (maps to `finch post`).",
+      inputSchema: { text: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() => runPost(buildArgv([args.text as string], { dryRun: args.dryRun as boolean }), deps)),
+    },
+    {
+      name: "reply_tweet",
+      description: "Reply to an existing post (maps to `finch reply`).",
+      inputSchema: { idOrUrl: z.string(), text: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runReply(
+            buildArgv([args.idOrUrl as string, args.text as string], { dryRun: args.dryRun as boolean }),
+            deps,
+          ),
+        ),
+    },
+    {
+      name: "post_thread",
+      description: "Post a chain of posts, each replying to the previous (maps to `finch thread`).",
+      inputSchema: { texts: z.array(z.string()).min(1), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runThread(buildArgv(args.texts as string[], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "get_timeline",
+      description: "The authenticated user's home reverse-chronological timeline (maps to `finch timeline`).",
+      inputSchema: { count: z.number().int().positive().optional() },
+      handler: (args) => runTool(() => runTimeline(buildArgv([], { count: args.count as number }), deps)),
+    },
+    {
+      name: "search_tweets",
+      description: "Recent search, ~7 days of coverage on free/basic tiers (maps to `finch search`).",
+      inputSchema: { query: z.string(), count: z.number().int().positive().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runSearch(buildArgv([args.query as string], { count: args.count as number }), deps),
+        ),
+    },
+    {
+      name: "get_user_posts",
+      description: "A given user's recent posts (maps to `finch user-posts`).",
+      inputSchema: { username: z.string(), count: z.number().int().positive().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runUserPosts(buildArgv([args.username as string], { count: args.count as number }), deps),
+        ),
+    },
+    {
+      name: "get_user_profile",
+      description: "Profile lookup by username (maps to `finch user`).",
+      inputSchema: { username: z.string() },
+      handler: (args) => runTool(() => runUser(buildArgv([args.username as string]), deps)),
+    },
+    {
+      name: "get_tweet",
+      description: "Fetch one post by id or URL (maps to `finch show`).",
+      inputSchema: { idOrUrl: z.string() },
+      handler: (args) => runTool(() => runShow(buildArgv([args.idOrUrl as string]), deps)),
+    },
+    {
+      name: "like_tweet",
+      description: "Like a post (maps to `finch like`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runLike(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "unlike_tweet",
+      description: "Undo a like (maps to `finch unlike`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runUnlike(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "repost_tweet",
+      description: "Repost a post (maps to `finch repost`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runRepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "unrepost_tweet",
+      description: "Undo a repost (maps to `finch unrepost`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runUnrepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "follow_user",
+      description: "Follow a user by username (maps to `finch follow`).",
+      inputSchema: { username: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runFollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "unfollow_user",
+      description: "Unfollow a user by username (maps to `finch unfollow`).",
+      inputSchema: { username: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() =>
+          runUnfollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps),
+        ),
+    },
+    {
+      name: "whoami",
+      description: "The authenticated user's own identity (maps to `finch whoami`).",
+      inputSchema: {},
+      handler: () => runTool(() => runWhoami(deps)),
+    },
+  ];
+}

@@ -16,6 +16,24 @@ const unusedUsersClient = {
   getTimeline: async () => {
     throw new Error("getTimeline not stubbed for this test");
   },
+  likePost: async () => {
+    throw new Error("likePost not stubbed for this test");
+  },
+  unlikePost: async () => {
+    throw new Error("unlikePost not stubbed for this test");
+  },
+  repostPost: async () => {
+    throw new Error("repostPost not stubbed for this test");
+  },
+  unrepostPost: async () => {
+    throw new Error("unrepostPost not stubbed for this test");
+  },
+  followUser: async () => {
+    throw new Error("followUser not stubbed for this test");
+  },
+  unfollowUser: async () => {
+    throw new Error("unfollowUser not stubbed for this test");
+  },
 };
 
 const unusedPostsClient = {
@@ -369,5 +387,194 @@ describe("ByokTransport.getUserByUsername", () => {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("CLIENT_ERROR");
     }
+  });
+});
+
+describe("ByokTransport.like", () => {
+  test("sends the tweetId in the request body and reports liked: true", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        likePost: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { liked: true } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.like("1", "999");
+
+    expect(result).toEqual({ liked: true });
+    expect(capturedArgs).toEqual(["1", { body: { tweetId: "999" } }]);
+  });
+
+  test("falls back to liked: true when the API omits the field", async () => {
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, likePost: async () => ({ data: {} }) },
+      unusedPostsClient,
+    );
+
+    expect(await transport.like("1", "999")).toEqual({ liked: true });
+  });
+
+  test("throws CLIENT_ERROR when the API returns no data", async () => {
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, likePost: async () => ({ errors: [{ detail: "not found" }] }) },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.like("1", "999");
+      throw new Error("expected like to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+});
+
+describe("ByokTransport.unlike", () => {
+  test("passes the userId/tweetId through and reports liked: false", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        unlikePost: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { liked: false } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.unlike("1", "999");
+
+    expect(result).toEqual({ liked: false });
+    expect(capturedArgs).toEqual(["1", "999"]);
+  });
+
+  test("falls back to liked: false when the API omits the field", async () => {
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, unlikePost: async () => ({ data: {} }) },
+      unusedPostsClient,
+    );
+
+    expect(await transport.unlike("1", "999")).toEqual({ liked: false });
+  });
+});
+
+describe("ByokTransport.retweet", () => {
+  test("sends the tweetId in the request body and reports reposted: true", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        repostPost: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { retweeted: true } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.retweet("1", "999");
+
+    expect(result).toEqual({ reposted: true });
+    expect(capturedArgs).toEqual(["1", { body: { tweetId: "999" } }]);
+  });
+
+  test("throws CLIENT_ERROR when the API returns no data", async () => {
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, repostPost: async () => ({ errors: [{ detail: "duplicate" }] }) },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.retweet("1", "999");
+      throw new Error("expected retweet to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+});
+
+describe("ByokTransport.unretweet", () => {
+  test("passes the userId/sourceTweetId through and reports reposted: false", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        unrepostPost: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { retweeted: false } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.unretweet("1", "999");
+
+    expect(result).toEqual({ reposted: false });
+    expect(capturedArgs).toEqual(["1", "999"]);
+  });
+});
+
+describe("ByokTransport.follow", () => {
+  test("sends the targetUserId in the request body and reports following: true", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        followUser: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { following: true } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.follow("1", "42");
+
+    expect(result).toEqual({ following: true });
+    expect(capturedArgs).toEqual(["1", { body: { targetUserId: "42" } }]);
+  });
+
+  test("throws CLIENT_ERROR when the API returns no data", async () => {
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, followUser: async () => ({ errors: [{ detail: "blocked" }] }) },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.follow("1", "42");
+      throw new Error("expected follow to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+});
+
+describe("ByokTransport.unfollow", () => {
+  test("passes the sourceUserId/targetUserId through and reports following: false", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        unfollowUser: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { following: false } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.unfollow("1", "42");
+
+    expect(result).toEqual({ following: false });
+    expect(capturedArgs).toEqual(["1", "42"]);
   });
 });
