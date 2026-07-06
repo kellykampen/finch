@@ -125,4 +125,17 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(envelope.error.code).toBe("USAGE_ERROR");
     expect(exitCode).toBe(2);
   });
+
+  test("a literal '--json' positional after the `--` terminator is NOT silently stripped", () => {
+    // Same terminator-boundary bug class as --describe above, but with a
+    // data-loss consequence instead of a misrouted command: post text of
+    // exactly "--json" (e.g. from an MCP tool call) must survive intact,
+    // not get deleted by the global --json flag filter.
+    const { exitCode, stdout } = runCli(["post", "--dry-run", "--", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data).toEqual({ dryRun: true, wouldSend: { text: "--json" } });
+  });
 });
