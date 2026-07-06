@@ -27,4 +27,4 @@ jobs:
       - name: Build smoke test
         run: |
           bun build --compile ./src/index.ts --outfile finch
-          ./finch --help
+          ./finch auth status --json
