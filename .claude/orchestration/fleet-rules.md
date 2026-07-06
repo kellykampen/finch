@@ -60,3 +60,13 @@
       the PR (`gh pr create`) → Gate A + Gate B evidence posted as PR comments → Gate C (CI)
       goes green → orchestrator merges via `gh pr merge`, never a bare local `git merge` once a
       remote/PR exists.
+11. **FLEET QUOTA RULES (overlay on `model-classifier` for every cast):** Codex is OFF
+    fleet-wide (weekly quota over-pace) — never `codex review`, never cast a Codex builder
+    seat. GLM/Kimi: use sparingly (also over-pace), not as the default. Fable 5: fine for
+    genuinely heavy/high-stakes escalation, not for routine casts. **Independent review (Gate
+    A) rotates between `agy`'s Gemini 3.1 Pro (High) and GPT-OSS 120B (Medium)** — alternate
+    them rather than defaulting to Gemini every time (it's hot fleet-wide right now).
+    Deliberately **not** using `agy`'s Claude Sonnet 4.6/Opus 4.6 options for review here: our
+    builder seats run Claude Sonnet 5, and "Claude reviewing Claude" isn't independent
+    regardless of generation — those two agy models are off-limits for this fleet's Gate A
+    specifically, even though `agy models` lists them.
