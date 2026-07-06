@@ -111,4 +111,18 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(envelope.ok).toBe(true);
     expect(Array.isArray(envelope.data.commands)).toBe(true);
   });
+
+  test("a literal '--describe' positional after the `--` terminator is NOT hijacked into schema output", () => {
+    // Mirrors the M3 flag-injection protection parseArgs already gives every
+    // command: free-text/positional arguments after `--` must be taken
+    // literally, even if they happen to equal a registered global flag
+    // string. `finch like -- --describe` should fail extractTweetId's
+    // validation (not a valid post ID/URL), not succeed as the schema doc.
+    const { exitCode, stdout } = runCli(["like", "--", "--describe"]);
+
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(exitCode).toBe(2);
+  });
 });

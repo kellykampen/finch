@@ -76,6 +76,39 @@ describe("runConfigGet", () => {
   test("throws USAGE_ERROR when no key is given", async () => {
     await expect(runConfigGet([], { readConfig: () => sampleConfig })).rejects.toThrow(FinchError);
   });
+
+  test("throws a clean FinchError (not a raw TypeError) when a top-level section is missing from a corrupt config", async () => {
+    const corrupt = { auth: sampleAuth, transport: "byok" } as unknown as FinchConfig;
+    let thrown: unknown;
+    try {
+      await runConfigGet(["defaults.count"], { readConfig: () => corrupt });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(FinchError);
+  });
+
+  test("throws USAGE_ERROR (not a crash) for a prototype-pollution key like __proto__", async () => {
+    let thrown: unknown;
+    try {
+      await runConfigGet(["__proto__"], { readConfig: () => sampleConfig });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(FinchError);
+    expect((thrown as FinchError).code).toBe("USAGE_ERROR");
+  });
+
+  test("throws USAGE_ERROR (not a crash) for the 'constructor' key", async () => {
+    let thrown: unknown;
+    try {
+      await runConfigGet(["constructor"], { readConfig: () => sampleConfig });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(FinchError);
+    expect((thrown as FinchError).code).toBe("USAGE_ERROR");
+  });
 });
 
 describe("runConfigSet", () => {

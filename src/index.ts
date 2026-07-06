@@ -106,7 +106,15 @@ async function main(): Promise<void> {
   // `--describe` is a global-flag alias for `finch schema` (PLAN.md's
   // agent-hardening section mentions both forms) — checked ahead of normal
   // dispatch so it works regardless of what other command/args precede it.
-  const args = argv.includes("--describe")
+  // Only looks for it *before* a `--` terminator: everything after `--` is
+  // caller-supplied free text (an MCP tool's post/reply text, a search
+  // query, ...) that must be taken literally, per the same terminator
+  // convention parseArgs enforces for every command — otherwise a literal
+  // positional value that happens to equal "--describe" would be hijacked
+  // into printing the schema instead of being passed through.
+  const terminatorIndex = argv.indexOf("--");
+  const globalFlags = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
+  const args = globalFlags.includes("--describe")
     ? ["schema"]
     : argv.filter((a) => a !== "--json");
 
