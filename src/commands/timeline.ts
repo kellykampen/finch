@@ -2,6 +2,7 @@ import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
 import { createByokTransport, type XTransport, type FinchTweet } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { parseArgs, resolveCount } from "../core/args";
+import { formatPosts } from "../core/format";
 
 export interface TimelineDeps {
   resolveAuth?: () => FinchAuthConfig | null;
@@ -29,9 +30,4 @@ export async function runTimeline(
   const posts = await transport.homeTimeline(me.id, count);
 
   return { data: { posts }, human: formatPosts(posts) };
-}
-
-function formatPosts(posts: FinchTweet[]): string {
-  if (posts.length === 0) return "(no posts)";
-  return posts.map((p) => `${p.id}  ${p.text}`).join("\n");
 }

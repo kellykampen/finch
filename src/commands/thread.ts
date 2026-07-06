@@ -87,6 +87,12 @@ export async function runThread(
 
 function resolveTexts(positionals: string[], values: Record<string, string>): string[] {
   if (values["--file"] !== undefined) {
+    if (positionals.length > 0) {
+      throw new FinchError(
+        "USAGE_ERROR",
+        "finch thread: positional args and --file are mutually exclusive",
+      );
+    }
     return readFileSync(values["--file"], "utf8")
       .split("\n")
       .map((line) => line.trim())

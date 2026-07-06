@@ -104,4 +104,26 @@ describe("runPost", () => {
       }),
     ).rejects.toThrow(FinchError);
   });
+
+  test("trims whitespace from a positional text arg, like --file/stdin", async () => {
+    const transport = fakeTransport({
+      createTweet: async (text) => ({ id: "1", text }),
+    });
+
+    const result = await runPost(["  hello world  "], {
+      resolveAuth: () => fakeAuth,
+      transportFactory: () => transport,
+    });
+
+    expect(result.data).toEqual({ id: "1", text: "hello world" });
+  });
+
+  test("rejects a whitespace-only positional arg instead of posting blank text", async () => {
+    await expect(
+      runPost(["   "], {
+        resolveAuth: () => fakeAuth,
+        transportFactory: () => fakeTransport({}),
+      }),
+    ).rejects.toThrow(FinchError);
+  });
 });

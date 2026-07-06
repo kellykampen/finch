@@ -3,6 +3,7 @@ import { createByokTransport, type XTransport, type FinchTweet } from "../core/t
 import { FinchError } from "../core/errors";
 import { normalizeUsername } from "../core/ids";
 import { parseArgs, resolveCount } from "../core/args";
+import { formatPosts } from "../core/format";
 
 export interface UserPostsDeps {
   resolveAuth?: () => FinchAuthConfig | null;
@@ -35,9 +36,4 @@ export async function runUserPosts(
   const posts = await transport.userTweets(profile.id, count);
 
   return { data: { posts }, human: formatPosts(posts) };
-}
-
-function formatPosts(posts: FinchTweet[]): string {
-  if (posts.length === 0) return "(no posts)";
-  return posts.map((p) => `${p.id}  ${p.text}`).join("\n");
 }

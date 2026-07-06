@@ -2,6 +2,7 @@ import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
 import { createByokTransport, type XTransport, type FinchTweet } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { parseArgs, resolveCount } from "../core/args";
+import { formatPosts } from "../core/format";
 
 export interface SearchDeps {
   resolveAuth?: () => FinchAuthConfig | null;
@@ -32,9 +33,4 @@ export async function runSearch(
   const posts = await transport.searchRecent(query, count);
 
   return { data: { posts }, human: formatPosts(posts) };
-}
-
-function formatPosts(posts: FinchTweet[]): string {
-  if (posts.length === 0) return "(no posts)";
-  return posts.map((p) => `${p.id}  ${p.text}`).join("\n");
 }

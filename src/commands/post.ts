@@ -64,7 +64,7 @@ async function resolveText(
   values: Record<string, string>,
   readStdin: () => Promise<string>,
 ): Promise<string> {
-  if (positionals[0] !== undefined) return positionals[0];
+  if (positionals[0] !== undefined) return positionals[0].trim();
   if (values["--file"] !== undefined) return readFileSync(values["--file"], "utf8").trim();
   return (await readStdin()).trim();
 }

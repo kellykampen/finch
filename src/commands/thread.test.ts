@@ -99,4 +99,21 @@ describe("runThread", () => {
       runThread([], { resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport({}) }),
     ).rejects.toThrow(FinchError);
   });
+
+  test("throws USAGE_ERROR when both positional args and --file are given", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "from file\n");
+
+      await expect(
+        runThread(["from arg", "--file", path], {
+          resolveAuth: () => fakeAuth,
+          transportFactory: () => fakeTransport({}),
+        }),
+      ).rejects.toThrow(FinchError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
