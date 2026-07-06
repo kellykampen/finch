@@ -18,16 +18,22 @@ through FIN-31 (auth/config/read/write/engage/MCP marked Done; distribution + ha
 Todo). This file + Linear are now both tracking sources; Linear is authoritative for
 issue-level status, this file for fleet/session state.
 
-**CEO pacing directive (current, standing until told otherwise): THROTTLED.** Max 1 worker
-seat at a time, finish one task fully before starting the next. Prefer non-Claude harnesses
-for builds where suitable (GLM/Kimi sparingly — also over-pace; Codex is OFF fleet-wide);
-`agy` for reviews, rotating Gemini 3.1 Pro and GPT-OSS 120B (GPT-OSS proved unreliable on
-complex review prompts this session — failed silently twice, see git log around PR #1's
-review comments; fell back to Gemini both times, worth re-testing before trusting it again).
-Reserve Fable/Claude seats for what genuinely needs them. Longer intervals between dispatches,
-relaxed poll cadence, keep the QC gates. **Currently: coasting at a clean stopping point — no
-seat is cast, no worktree is open.** Do not start the next slice (distribution or hardening)
-without an explicit go-ahead.
+**CEO directive (current, standing until told otherwise): OVERNIGHT MODE, IDLE.** CEO asleep
+~8h. Claude quota is the binding limit and must not be exceeded — orchestrator has gone idle
+at a clean stopping point (no seat cast, no worktree open) and is NOT dispatching new builds
+overnight. If work resumes before the CEO wakes, it must use only non-Claude harnesses
+(GLM/Kimi builds, `agy` for review — zero Fable, minimal Claude), skip-and-continue on any
+decision rather than stall (logged to `MORNING-ESCALATIONS.md`, not asked of the CEO), and
+keep the orchestrator's own turns rare/short since they're the Claude cost. No CEO responses
+expected overnight.
+
+Superseded pacing note (yesterday's THROTTLED-but-active directive, kept for context): max 1
+worker seat at a time, finish one task before the next, prefer non-Claude harnesses for
+builds, `agy` review rotation between Gemini 3.1 Pro and GPT-OSS 120B (GPT-OSS proved
+unreliable on complex review prompts this session — failed silently twice, see git log around
+PR #1's review comments; fell back to Gemini both times, worth re-testing before trusting it
+again). This is now superseded by full overnight idle, above — do not start the next slice
+(distribution or hardening) without an explicit go-ahead from the CEO in the morning.
 
 **Known open items (not blocking, not forgotten):**
 1. Rotate the CEO's 4 X API credentials (FIN-30) — a builder seat incidentally viewed the real
