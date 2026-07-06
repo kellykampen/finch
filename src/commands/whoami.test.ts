@@ -1,19 +1,19 @@
 import { describe, test, expect } from "bun:test";
 import { runWhoami } from "./whoami";
 import { FinchError } from "../core/errors";
-import type { XTransport } from "../core/transport";
+import { fakeTransport } from "../core/transport.fixtures";
 
 const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
 
 describe("runWhoami", () => {
   test("returns the authenticated user's id/username/name", async () => {
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
-    };
+    });
 
     const result = await runWhoami({
       resolveAuth: () => fakeAuth,
-      transportFactory: () => fakeTransport,
+      transportFactory: () => transport,
     });
 
     expect(result.data).toEqual({ id: "1", username: "kelly", name: "Kelly" });
@@ -38,14 +38,14 @@ describe("runWhoami", () => {
   });
 
   test("propagates transport errors (e.g. rejected credentials) as-is", async () => {
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => {
         throw new FinchError("AUTH_ERROR", "X rejected the provided credentials");
       },
-    };
+    });
 
     try {
-      await runWhoami({ resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport });
+      await runWhoami({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
       throw new Error("expected runWhoami to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);

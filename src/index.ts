@@ -2,6 +2,14 @@
 import { FinchError, exitCodeForError } from "./core/errors";
 import { runAuth, runAuthStatus } from "./commands/auth";
 import { runWhoami } from "./commands/whoami";
+import { runPost } from "./commands/post";
+import { runReply } from "./commands/reply";
+import { runThread } from "./commands/thread";
+import { runTimeline } from "./commands/timeline";
+import { runSearch } from "./commands/search";
+import { runUserPosts } from "./commands/user-posts";
+import { runUser } from "./commands/user";
+import { runShow } from "./commands/show";
 
 async function dispatch(args: string[]): Promise<{ data: unknown; human: string }> {
   const [cmd, sub] = args;
@@ -14,6 +22,30 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   }
   if (cmd === "whoami") {
     return runWhoami();
+  }
+  if (cmd === "post") {
+    return runPost(args.slice(1));
+  }
+  if (cmd === "reply") {
+    return runReply(args.slice(1));
+  }
+  if (cmd === "thread") {
+    return runThread(args.slice(1));
+  }
+  if (cmd === "timeline") {
+    return runTimeline(args.slice(1));
+  }
+  if (cmd === "search") {
+    return runSearch(args.slice(1));
+  }
+  if (cmd === "user-posts") {
+    return runUserPosts(args.slice(1));
+  }
+  if (cmd === "user") {
+    return runUser(args.slice(1));
+  }
+  if (cmd === "show") {
+    return runShow(args.slice(1));
   }
 
   throw new FinchError("USAGE_ERROR", `Unknown command: ${args.join(" ") || "(none)"}`);

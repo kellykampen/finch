@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { runAuth, runAuthStatus } from "./auth";
 import { FinchError } from "../core/errors";
-import type { XTransport } from "../core/transport";
+import { fakeTransport } from "../core/transport.fixtures";
 import type { FinchConfig } from "../core/config";
 
 const enteredAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
@@ -9,13 +9,13 @@ const enteredAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessT
 describe("runAuth", () => {
   test("validates then writes the config on success", async () => {
     const written: { config: FinchConfig | null } = { config: null };
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
-    };
+    });
 
     const result = await runAuth({
       promptCredentials: async () => enteredAuth,
-      transportFactory: () => fakeTransport,
+      transportFactory: () => transport,
       readConfig: () => null,
       writeConfig: (config) => {
         written.config = config;
@@ -32,13 +32,13 @@ describe("runAuth", () => {
 
   test("preserves existing defaults when re-run", async () => {
     const written: { config: FinchConfig | null } = { config: null };
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
-    };
+    });
 
     await runAuth({
       promptCredentials: async () => enteredAuth,
-      transportFactory: () => fakeTransport,
+      transportFactory: () => transport,
       readConfig: () => ({
         auth: { apiKey: "old", apiKeySecret: "old", accessToken: "old", accessTokenSecret: "old" },
         transport: "byok",
@@ -55,16 +55,16 @@ describe("runAuth", () => {
 
   test("does not write the config when validation fails", async () => {
     let writeCalled = false;
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => {
         throw new FinchError("AUTH_ERROR", "X rejected the provided credentials");
       },
-    };
+    });
 
     await expect(
       runAuth({
         promptCredentials: async () => enteredAuth,
-        transportFactory: () => fakeTransport,
+        transportFactory: () => transport,
         readConfig: () => null,
         writeConfig: () => {
           writeCalled = true;
@@ -92,42 +92,42 @@ describe("runAuthStatus", () => {
   });
 
   test("reports configured and valid when the live call succeeds", async () => {
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
-    };
+    });
 
     const result = await runAuthStatus({
       resolveAuth: () => enteredAuth,
-      transportFactory: () => fakeTransport,
+      transportFactory: () => transport,
     });
 
     expect(result.data).toEqual({ configured: true, valid: true, username: "kelly" });
   });
 
   test("reports configured but invalid when X rejects the credentials", async () => {
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => {
         throw new FinchError("AUTH_ERROR", "X rejected the provided credentials");
       },
-    };
+    });
 
     const result = await runAuthStatus({
       resolveAuth: () => enteredAuth,
-      transportFactory: () => fakeTransport,
+      transportFactory: () => transport,
     });
 
     expect(result.data).toEqual({ configured: true, valid: false, username: null });
   });
 
   test("propagates non-auth errors (e.g. network failure) instead of masking them", async () => {
-    const fakeTransport: XTransport = {
+    const transport = fakeTransport({
       getMe: async () => {
         throw new FinchError("NETWORK_ERROR", "could not reach X");
       },
-    };
+    });
 
     await expect(
-      runAuthStatus({ resolveAuth: () => enteredAuth, transportFactory: () => fakeTransport }),
+      runAuthStatus({ resolveAuth: () => enteredAuth, transportFactory: () => transport }),
     ).rejects.toThrow(FinchError);
   });
 });
