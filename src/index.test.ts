@@ -1,0 +1,74 @@
+import { describe, test, expect } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const CLI_ENTRY = join(import.meta.dir, "index.ts");
+
+function runCli(args: string[]) {
+  const fakeHome = mkdtempSync(join(tmpdir(), "finch-cli-test-"));
+  try {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", CLI_ENTRY, ...args],
+      env: {
+        ...process.env,
+        HOME: fakeHome,
+        FINCH_API_KEY: "",
+        FINCH_API_KEY_SECRET: "",
+        FINCH_ACCESS_TOKEN: "",
+        FINCH_ACCESS_TOKEN_SECRET: "",
+      },
+    });
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    };
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+}
+
+describe("finch CLI arg parsing / exit codes", () => {
+  test("unknown command exits 2 with a JSON usage error", () => {
+    const { exitCode, stdout } = runCli(["bogus-command", "--json"]);
+
+    expect(exitCode).toBe(2);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+  });
+
+  test("non-TTY stdout emits JSON even without an explicit --json flag", () => {
+    // Per PLAN.md: "--json (or non-TTY stdout) emits one JSON object" — a
+    // piped/captured subprocess is never a TTY, so this is the path every
+    // subprocess test in this file actually exercises.
+    const { exitCode, stdout, stderr } = runCli(["bogus-command"]);
+
+    expect(exitCode).toBe(2);
+    expect(stderr).toBe("");
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+  });
+
+  test("whoami with no config/env exits 3 with an AUTH_ERROR JSON envelope", () => {
+    const { exitCode, stdout } = runCli(["whoami", "--json"]);
+
+    expect(exitCode).toBe(3);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("AUTH_ERROR");
+  });
+
+  test("auth status with no config/env exits 0 reporting unconfigured", () => {
+    const { exitCode, stdout } = runCli(["auth", "status", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope).toEqual({
+      ok: true,
+      data: { configured: false, valid: false, username: null },
+    });
+  });
+});
