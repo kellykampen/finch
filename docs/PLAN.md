@@ -1,6 +1,8 @@
 # Finch — v1 Plan
 
-Status: **PLANNING ONLY — awaiting CEO greenlight.** Nothing in this doc is built yet.
+Status: **PLANNING ONLY — awaiting CEO build-greenlight.** All 4 pre-build open questions
+below are resolved (doc confirmed, OAuth model confirmed, `finch show` added to scope, Linear
+team deferred). Nothing in this doc is built yet.
 
 ## What
 
@@ -62,9 +64,9 @@ against — not before, and not for the planning phase this doc covers.
   re-checks and re-applies `0600` in case another process touched it (this is
   regression-checklist item 7 — `stat -f '%OLp' ~/.finch/config` must read `600`).
 - **Format:** JSON (not JSON5/TOML — no extra parser dependency, Bun parses JSON natively).
-- **The exact four credential fields required (OAuth 1.0a User Context — see rationale in
-  Open Questions below), copied verbatim from the X Developer Portal's "Keys and tokens" page
-  for the operator's own app:**
+- **The exact four credential fields required (OAuth 1.0a User Context — CEO-confirmed, see
+  Resolved Decisions below), copied verbatim from the X Developer Portal's "Keys and tokens"
+  page for the operator's own app:**
 
   | Config field | X Developer Portal source | Used for |
   |---|---|---|
@@ -126,7 +128,7 @@ features are explicitly out of v1):
 | `post` | `finch post` | yes |
 | `repost` / `unrepost` | `finch repost` / `finch unrepost` | yes |
 | `like` / `unlike` | `finch like` / `finch unlike` | yes |
-| `tweet` (fetch single post) | folded into `finch search`/`finch user-posts` output; no standalone "fetch by id" in v1 | partial — flag as an open question below |
+| `tweet` (fetch single post) | `finch show` | yes |
 | `tweets` (user's recent posts) | `finch user-posts` | yes |
 | `profile` | `finch user` | yes |
 | `followers` / `following` | — | **out of v1** (not in brief's locked scope; candidate backlog item) |
@@ -136,12 +138,10 @@ features are explicitly out of v1):
 | `sync` / `sql` (local mirror) | — | **out of v1** (SaaS-specific local-cache feature, no equivalent need for a BYOK CLI) |
 | account/billing management | `finch auth` / `finch config` | yes, BYOK-shaped not billing-shaped |
 
-Open question (flagged, not decided): usesocial.dev has a standalone "fetch one post by
-ID/URL" command; the locked v1 scope list (post/reply/thread, timeline/search/user-posts,
-like/repost/follow) doesn't explicitly include it, but `reply` needs to resolve a
-tweet-id-or-URL argument anyway, and it's a near-zero-cost addition once `GET /2/tweets/:id`
-is wired up for that resolution. Recommend adding `finch show <id-or-url>` in M1 as a thin
-wrapper — flagging for CEO confirmation rather than assuming.
+**CEO-confirmed addition to v1 scope:** `finch show <id-or-url>` (fetch one post by id) was
+flagged as an open question and is now locked into v1 — `reply` already needs to resolve a
+tweet-id-or-URL argument, and `GET /2/tweets/:id` is a near-zero-cost addition on top of that.
+See the Read table below and M1 in the milestones.
 
 ## v1 command spec
 
@@ -199,7 +199,7 @@ Conventions used throughout:
 | `finch search "<query>" [-n]` | Recent search (X API v2 free/basic tiers only cover ~7 days) | `GET /2/tweets/search/recent` | `{posts: [...]}` — same post shape as timeline |
 | `finch user-posts <username> [-n]` | A given user's recent posts | `GET /2/users/by/username/:username` (resolve id) then `GET /2/users/:id/tweets` | `{posts: [...]}` |
 | `finch user <username>` | Profile lookup | `GET /2/users/by/username/:username` | `{id, username, name, description, public_metrics}` |
-| `finch show <id-or-url>` | Fetch one post by id (open question above — recommended addition) | `GET /2/tweets/:id` | `{id, text, author_id, created_at}` |
+| `finch show <id-or-url>` | Fetch one post by id | `GET /2/tweets/:id` | `{id, text, author_id, created_at}` |
 
 **Tier-limit handling (brief calls this out as the expensive/limited part):** every read
 command pre-flight-checks the X API's returned rate-limit headers
@@ -246,16 +246,13 @@ shape from the table above (no `--json`-vs-table branching inside MCP — it's J
 construction). Errors surface as MCP tool errors carrying the same `{code, message, detail}`
 shape rather than being swallowed into a generic failure string.
 
-## Agent-interface hardening (from the found "building for agents" reference)
+## Agent-interface hardening (from the "building for agents" reference — CEO-confirmed)
 
-While mapping the fleet's panes to find where to report this plan, a browser tab was found
-open (Personal workspace) on "You Need to Rewrite Your CLI for AI Agents"
-(justin.poehnelt.com) — a strong candidate for the "building for agents" doc the brief said
-the CEO referenced but didn't come through. Treating it as a candidate, not confirmed — flag
-to the CEO for a one-line "yes that's it" before treating it as locked. It validates two
-choices already made above (env-var credential injection over a browser-redirect OAuth flow;
-a bundled MCP surface alongside the CLI) and suggests concrete additions worth folding into
-the spec now rather than retrofitting later:
+The brief's referenced "building for agents" doc is **confirmed** by the CEO to be
+https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/ (found open in a browser
+tab while reporting this plan up). Its guidance below is now **locked v1 scope**, not a
+recommendation. It also validates two choices already made above (env-var credential
+injection over a browser-redirect OAuth flow; a bundled MCP surface alongside the CLI):
 
 - **`--dry-run` on every mutating command** (`post`, `reply`, `thread`, `like`, `unlike`,
   `repost`, `unrepost`, `follow`, `unfollow`) — validates args and prints what would be sent
@@ -282,8 +279,8 @@ the spec now rather than retrofitting later:
   the untrusted-tweet-text note above, installable alongside the binary, so an agent harness
   onboarding Finch gets the invariants that don't fit in `--help`.
 
-These are additions to, not replacements for, the v1 command spec above — recommend folding
-`--dry-run` and `finch schema` into M2/M1 respectively once greenlit; the rest are
+These are additions to, not replacements for, the v1 command spec above — `finch schema` is
+now part of M1 and `--dry-run` is now part of M2 (see milestones below); the rest are
 documentation/validation hardening threaded through existing milestones.
 
 ## Distribution: Bun single binary + Homebrew
@@ -352,10 +349,12 @@ point in its favor, but this is a phase-2 decision to make when phase 2 is green
 - **M1 — Core + read-only BYOK.** `bun init` proper project (tsconfig, biome/lint, `bun test`
   wiring), `~/.finch/config` schema + `finch auth`/`auth status`/`config *`/`whoami`,
   `XTransport` interface + `ByokTransport`, read commands (`timeline`, `search`,
-  `user-posts`, `user`, `show`), universal `--json` + exit-code plumbing, regression
-  checklist items 1-7 passable.
+  `user-posts`, `user`, `show`), universal `--json` + exit-code plumbing, `finch schema`
+  introspection command, input validation on id/URL/text arguments, regression checklist
+  items 1-7 passable.
 - **M2 — Write & engage.** `post`/`reply`/`thread`, `like`/`unlike`, `repost`/`unrepost`,
-  `follow`/`unfollow`. Regression checklist item 8 passable for every command.
+  `follow`/`unfollow`, `--dry-run` on every mutating command. Regression checklist item 8
+  passable for every command.
 - **M3 — MCP server.** Bundle the MCP surface wrapping M1+M2 core functions; regression
   checklist item 9 passable.
 - **M4 — Distribution.** Multi-target `bun build --compile`, GH Actions release pipeline,
@@ -365,19 +364,17 @@ point in its favor, but this is a phase-2 decision to make when phase 2 is green
 - **Phase 2 (design-only, not scheduled).** `ProxyTransport` + hosted gateway + billing —
   blocked on a backend/billing stack decision and the CEO's proxy-key infra.
 
-## Open questions / escalations (per boot directive, surfacing rather than guessing)
+## Resolved decisions (previously open questions — all 4 answered by the CEO)
 
-1. **"Building for agents" reference doc** — likely found (see "Agent-interface hardening"
-   section above: a browser tab already open on justin.poehnelt.com's "You Need to Rewrite
-   Your CLI for AI Agents"). Its recommendations are folded in above, but it's a candidate,
-   not a confirmed match — needs a one-line CEO confirmation that this is the referenced doc
-   before treating its guidance as locked rather than "recommended."
-2. **`finch show <id>`** (fetch a single post) isn't explicitly in the brief's locked v1
-   scope but is implied by `reply`'s id/URL resolution and matches usesocial.dev's `tweet`
-   command — recommend including it in M1; flagging rather than assuming.
-3. **Linear team/project**: recommend creating one (`FIN` prefix) once the plan is
-   greenlit — v1 milestones above map cleanly to M1-M5 as either projects or a milestone
-   sequence within one project. Not created yet, per instruction.
-4. **OAuth model**: this plan locks OAuth 1.0a (4 static keys) for v1 BYOK over OAuth 2.0
-   PKCE, specifically to avoid a local redirect server/browser flow. Worth a one-line CEO
-   confirmation since it affects the `finch auth` UX (paste 4 values vs. browser login).
+1. **"Building for agents" reference doc** — **CONFIRMED**:
+   https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/. Its guidance is locked
+   into the "Agent-interface hardening" section above and into M1/M2.
+2. **`finch show <id>`** — **CONFIRMED added to v1 scope.** Now a normal row in the Read
+   command table and part of M1, no longer flagged.
+3. **Linear team/project** — **CONFIRMED: not yet.** No `FIN` team created. This doc
+   (`docs/PLAN.md`) remains the tracking source of record for milestones until the CEO
+   decides to stand up a Linear team.
+4. **OAuth model** — **CONFIRMED: OAuth 1.0a** (4 static keys), as already specified in
+   "Setup / Auth" above. No browser-redirect flow in v1.
+
+Awaiting: explicit CEO **build-greenlight** before any implementation starts.
