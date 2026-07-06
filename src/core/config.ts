@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { FinchError } from "./errors";
 
 export interface FinchAuthConfig {
   apiKey: string;
@@ -31,17 +32,25 @@ export function configPath(): string {
   return join(resolveHomeDir(), ".finch", "config");
 }
 
+const CONFIG_DIR_MODE = 0o700;
+
 export function readConfig(): FinchConfig | null {
   const path = configPath();
   if (!existsSync(path)) return null;
   const raw = readFileSync(path, "utf8");
   chmodSync(path, CONFIG_MODE);
-  return JSON.parse(raw) as FinchConfig;
+  try {
+    return JSON.parse(raw) as FinchConfig;
+  } catch {
+    throw new FinchError("AUTH_ERROR", `${path} is not valid JSON`, null);
+  }
 }
 
 export function writeConfig(config: FinchConfig): void {
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true });
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  chmodSync(dir, CONFIG_DIR_MODE);
   writeFileSync(path, JSON.stringify(config, null, 2), { mode: CONFIG_MODE });
   chmodSync(path, CONFIG_MODE);
 }

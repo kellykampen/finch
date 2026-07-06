@@ -47,7 +47,7 @@ describe("ByokTransport.getMe", () => {
     }
   });
 
-  test("maps a 429 ApiError to RATE_LIMITED", async () => {
+  test("maps a 429 ApiError to RATE_LIMITED with resetAt: null when no reset header is present", async () => {
     const transport = new ByokTransport({
       getMe: async () => {
         throw new ApiError("Too Many Requests", 429, "Too Many Requests", new Headers(), null);
@@ -60,6 +60,26 @@ describe("ByokTransport.getMe", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("RATE_LIMITED");
+      expect((err as FinchError).detail).toEqual({ resetAt: null });
+    }
+  });
+
+  test("maps a 429 ApiError's x-rate-limit-reset header to an ISO8601 resetAt", async () => {
+    const resetUnixSeconds = 1735689600; // 2025-01-01T00:00:00.000Z
+    const headers = new Headers({ "x-rate-limit-reset": String(resetUnixSeconds) });
+    const transport = new ByokTransport({
+      getMe: async () => {
+        throw new ApiError("Too Many Requests", 429, "Too Many Requests", headers, null);
+      },
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("RATE_LIMITED");
+      expect((err as FinchError).detail).toEqual({ resetAt: "2025-01-01T00:00:00.000Z" });
     }
   });
 

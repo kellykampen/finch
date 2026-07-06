@@ -53,12 +53,22 @@ function mapSdkError(err: unknown): FinchError {
       return new FinchError("AUTH_ERROR", "X rejected the provided credentials", err.data ?? null);
     }
     if (err.status === 429) {
-      return new FinchError("RATE_LIMITED", "Rate limited by the X API", err.data ?? null);
+      return new FinchError("RATE_LIMITED", "Rate limited by the X API", {
+        resetAt: parseRateLimitReset(err.headers),
+      });
     }
     return new FinchError("CLIENT_ERROR", err.message, err.data ?? null);
   }
   const message = err instanceof Error ? err.message : String(err);
   return new FinchError("NETWORK_ERROR", message, null);
+}
+
+function parseRateLimitReset(headers: Headers): string | null {
+  const raw = headers.get("x-rate-limit-reset");
+  if (!raw) return null;
+  const unixSeconds = Number(raw);
+  if (!Number.isFinite(unixSeconds)) return null;
+  return new Date(unixSeconds * 1000).toISOString();
 }
 
 /**

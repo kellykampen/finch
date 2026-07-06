@@ -1,13 +1,14 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, statSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import {
   configPath,
   readConfig,
   writeConfig,
   resolveAuthConfig,
 } from "./config";
+import { FinchError } from "./errors";
 
 const ENV_KEYS = [
   "FINCH_API_KEY",
@@ -85,6 +86,19 @@ describe("readConfig", () => {
     const mode = statSync(configPath()).mode & 0o777;
     expect(mode).toBe(0o600);
   });
+
+  test("throws AUTH_ERROR (not a raw SyntaxError) when the config file is corrupt", () => {
+    mkdirSync(dirname(configPath()), { recursive: true });
+    writeFileSync(configPath(), "{ not valid json", { mode: 0o600 });
+
+    try {
+      readConfig();
+      throw new Error("expected readConfig to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+    }
+  });
 });
 
 describe("writeConfig", () => {
@@ -97,6 +111,17 @@ describe("writeConfig", () => {
 
     const mode = statSync(configPath()).mode & 0o777;
     expect(mode).toBe(0o600);
+  });
+
+  test("creates ~/.finch itself at mode 0700", () => {
+    writeConfig({
+      auth: sampleAuth,
+      transport: "byok",
+      defaults: { json: false, count: 10 },
+    });
+
+    const mode = statSync(dirname(configPath())).mode & 0o777;
+    expect(mode).toBe(0o700);
   });
 
   test("overwrites all four auth fields on re-run", () => {

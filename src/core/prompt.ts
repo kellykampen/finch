@@ -10,8 +10,11 @@ export interface PromptSession {
   close(): void;
 }
 
-function defaultIO(): PromptIO {
-  return { input: process.stdin, output: process.stdout };
+// Prompt labels/echo are terminal UI, not command output — they must never
+// land on stdout, or they'd corrupt the "one JSON object on stdout" contract
+// when --json is set or stdout is piped/non-TTY.
+export function defaultIO(): PromptIO {
+  return { input: process.stdin, output: process.stderr };
 }
 
 const CTRL_C = String.fromCharCode(3);
@@ -95,6 +98,13 @@ function createTTYSession(io: PromptIO): PromptSession {
           }
           if (ch === BACKSPACE || ch === "\b") {
             value = value.slice(0, -1);
+            continue;
+          }
+          const codePoint = ch.codePointAt(0) ?? 0;
+          if (codePoint < 0x20 || codePoint === 0x7f) {
+            // Drop other control bytes (e.g. the ESC lead-in of an arrow-key
+            // or other escape sequence) instead of silently appending them
+            // into the secret value with no visible feedback.
             continue;
           }
           value += ch;
