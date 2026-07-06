@@ -71,4 +71,44 @@ describe("finch CLI arg parsing / exit codes", () => {
       data: { configured: false, valid: false, username: null },
     });
   });
+
+  test("config path prints the resolved path without requiring a config file", () => {
+    const { exitCode, stdout } = runCli(["config", "path", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data.path).toMatch(/\.finch\/config$/);
+  });
+
+  test("config get with no config exits 3 with an AUTH_ERROR JSON envelope", () => {
+    const { exitCode, stdout } = runCli(["config", "get", "transport", "--json"]);
+
+    expect(exitCode).toBe(3);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("AUTH_ERROR");
+  });
+
+  test("schema outputs a JSON document describing every command", () => {
+    const { exitCode, stdout } = runCli(["schema", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+    expect(envelope.data.commands.length).toBeGreaterThan(15);
+    const names = envelope.data.commands.map((c: { name: string }) => c.name);
+    expect(names).toContain("config get");
+    expect(names).toContain("post");
+  });
+
+  test("--describe works as a global-flag alias for `finch schema`", () => {
+    const { exitCode, stdout } = runCli(["--describe"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+  });
 });

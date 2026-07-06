@@ -7,6 +7,7 @@ import {
   readConfig,
   writeConfig,
   resolveAuthConfig,
+  maskSecret,
 } from "./config";
 import { FinchError } from "./errors";
 
@@ -186,5 +187,20 @@ describe("resolveAuthConfig", () => {
     process.env.FINCH_API_KEY = "env-key-only";
 
     expect(resolveAuthConfig()).toEqual(sampleAuth);
+  });
+});
+
+describe("maskSecret", () => {
+  test("masks all but the last 4 characters of a long secret", () => {
+    expect(maskSecret("abcdefgh1234")).toBe("********1234");
+  });
+
+  test("masks a secret entirely when it's 4 characters or shorter", () => {
+    expect(maskSecret("abcd")).toBe("****");
+    expect(maskSecret("ab")).toBe("**");
+  });
+
+  test("masks an empty string to an empty string", () => {
+    expect(maskSecret("")).toBe("");
   });
 });
