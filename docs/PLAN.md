@@ -1,8 +1,9 @@
 # Finch — v1 Plan
 
-Status: **PLANNING ONLY — awaiting CEO build-greenlight.** All 4 pre-build open questions
-below are resolved (doc confirmed, OAuth model confirmed, `finch show` added to scope, Linear
-team deferred). Nothing in this doc is built yet.
+Status: **BUILD STARTED (M1, low-priority).** All 4 pre-build open questions below are
+resolved (doc confirmed, OAuth model confirmed, `finch show` added to scope, Linear team
+deferred), and the tech-stack/SDK decision below is locked. M1 slice 1 is in progress in a
+worker seat.
 
 ## What
 
@@ -22,6 +23,42 @@ native tools, not shelled-out CLI calls.
 - A single compiled binary + brew formula means zero Node/Bun runtime dependency for the
   end user — `brew install finch` and it works.
 
+## Tech Stack / API
+
+- **Language/runtime:** TypeScript on Bun (see Distribution below for the compiled-binary story).
+- **API:** the official **X API v2** — overview: https://docs.x.com/x-api/overview.
+- **API client: the official X TypeScript SDK, not a hand-rolled HTTP/signing layer.**
+  Package `@xdevplatform/xdk` — overview: https://docs.x.com/xdks/typescript/overview.
+  Evaluated against v1's needs:
+  - **Auth**: the SDK's `ClientConfig` takes an `oauth1` field built from an `OAuth1` instance
+    (`new OAuth1({apiKey, apiSecret, accessToken, accessTokenSecret})`) — confirms OAuth 1.0a
+    User Context with the same 4 static credentials this plan already locked in (see Setup /
+    Auth below); it also supports OAuth 2.0 User Context and App-Only Bearer, neither used in
+    v1. **Field-name note**: the SDK's `OAuth1Config.apiSecret` corresponds to this plan's
+    `auth.apiKeySecret` — `ByokTransport` maps the field name at construction time; Finch's own
+    config schema keeps `apiKeySecret` (matches the X Developer Portal's own label) rather than
+    renaming to track the SDK.
+  - **Auth-validation call**: confirmed via `client.users.getMe()` — this is what `finch auth`,
+    `finch auth status`, and `finch whoami` call through the SDK (replaces the
+    previously-planned raw `GET /2/users/me`).
+  - **Endpoint coverage**: the SDK's docs list "Users, Posts, Lists, Bookmarks, Communities, and
+    more" with a confirmed example (`client.users.getByUsername(...)`), which covers the shape
+    Finch needs (users, posts). **Gap, not silently papered over**: the exact typed method
+    names for creating/deleting posts, likes, retweets, and follows weren't enumerated in the
+    fetched docs excerpts — the M1/M2 builder confirms each against the SDK's live API
+    reference/type definitions when implementing that command, and reports back here (this
+    section) with the specific method name once confirmed, or the specific gap + fallback if
+    the SDK truly lacks one (fallback would be a direct authenticated HTTP call using the same
+    `OAuth1` signer the SDK exposes, not a from-scratch signing implementation).
+  - **Why the SDK over hand-rolled OAuth 1.0a**: request signing is exactly the kind of code
+    where a subtle bug (bad parameter encoding, timestamp/nonce handling) fails silently or
+    intermittently and is expensive to debug — the SDK is the X-maintained source of truth for
+    that logic, so Finch's transport code stays thin (call the client, shape the response),
+    and upstream fixes/deprecations land as a dependency bump instead of a Finch patch.
+  - Every core command function still goes through the `XTransport` interface (see the seam
+    below) — the SDK is an implementation detail of `ByokTransport`, never imported directly by
+    command handlers or the MCP tool code.
+
 ## How (architecture at a glance)
 
 ```
@@ -40,8 +77,8 @@ native tools, not shelled-out CLI calls.
                   ┌──────────────┴───────────────┐
                   │                               │
            ByokTransport (v1)           ProxyTransport (phase 2, not built)
-           direct X API v2 calls        calls Finch's hosted gateway
-           using user's OAuth1.0a keys  (CEO's keys, billing, rate-limit pooling)
+           wraps @xdevplatform/xdk       calls Finch's hosted gateway
+           (OAuth1.0a, user's own keys)  (CEO's keys, billing, rate-limit pooling)
 ```
 
 Both the CLI commands and the MCP tools call the **same core functions** — no logic
@@ -85,8 +122,10 @@ against — not before, and not for the planning phase this doc covers.
   1. Operator runs `finch auth` interactively on his own machine.
   2. It prompts for the four fields one at a time, masked (no echo), no default values pulled
      from anywhere.
-  3. On entry, it makes one live validation call (`GET /2/users/me`) before writing anything
-     to disk — a typo'd key fails loudly with exit code 3, not a silently-broken config file.
+  3. On entry, it makes one live validation call through the official X TypeScript SDK
+     (`@xdevplatform/xdk`'s `client.users.getMe()`, constructed with an `OAuth1` instance from
+     the four entered fields — see Tech Stack / API above) before writing anything to disk — a
+     typo'd key fails loudly with exit code 3, not a silently-broken config file.
   4. Only on successful validation does it write `~/.finch/config` at `0600` and print
      `{configured: true, username: "..."}` (human mode: a one-line confirmation).
   5. Re-running `finch auth` overwrites all four fields (full re-entry, no partial update —
@@ -159,6 +198,11 @@ Conventions used throughout:
   (`extractTweetId`-style helper).
 - `-n <count>` bounds list-returning commands; default 10, capped by an API-tier-aware max
   (documented per command — X API v2 hard-caps most list endpoints at 100/page).
+- Every "X API v2 call" cell below is called through the official SDK (`@xdevplatform/xdk`),
+  never raw HTTP — the endpoint path shown is what the SDK call maps to over the wire, not a
+  hand-rolled request. Per Tech Stack / API above, the exact typed SDK method name for each
+  non-users endpoint (posts, likes, retweets, follows, search, timelines) is confirmed by
+  whoever implements that command against the SDK's live reference, not guessed here.
 
 ### Exit codes (shared across every command)
 
@@ -176,12 +220,12 @@ Conventions used throughout:
 
 | Command | Behavior | X API v2 call | JSON `data` shape | Notes |
 |---|---|---|---|---|
-| `finch auth` | Interactive wizard: prompts for the 4 OAuth1.0a credentials, validates them with a live call, writes `~/.finch/config` at `0600` | `GET /2/users/me` (validation only) | `{configured: true, username: string}` | Never accepts keys as bare CLI args in v1 (avoids shell-history leakage) — reads from prompts or `FINCH_*` env vars only |
-| `finch auth status` | Reports whether config exists/is valid, without a wizard | `GET /2/users/me` | `{configured: bool, valid: bool, username: string \| null}` | Used by `regr·haiku` checklist item 6 |
+| `finch auth` | Interactive wizard: prompts for the 4 OAuth1.0a credentials, validates them with a live call, writes `~/.finch/config` at `0600` | SDK `client.users.getMe()` (validation only) | `{configured: true, username: string}` | Never accepts keys as bare CLI args in v1 (avoids shell-history leakage) — reads from prompts or `FINCH_*` env vars only |
+| `finch auth status` | Reports whether config exists/is valid, without a wizard | SDK `client.users.getMe()` | `{configured: bool, valid: bool, username: string \| null}` | Used by `regr·haiku` checklist item 6 |
 | `finch config get <key>` | Print one config value (never prints secret fields in plaintext — masks all but last 4 chars) | — | `{key: string, value: string}` | |
 | `finch config set <key> <value>` | Set one non-secret config value (e.g. `defaults.count`) | — | `{key: string, value: string}` | Secret fields only settable via `finch auth` |
 | `finch config path` | Print `~/.finch/config`'s resolved path | — | `{path: string}` | |
-| `finch whoami` | Alias for the identity half of `auth status` — quick "who am I" | `GET /2/users/me` | `{id: string, username: string, name: string}` | Matches `bird whoami` UX |
+| `finch whoami` | Alias for the identity half of `auth status` — quick "who am I" | SDK `client.users.getMe()` | `{id: string, username: string, name: string}` | Matches `bird whoami` UX |
 
 ### Write
 
@@ -329,14 +373,19 @@ process; this is the schema in full, including the non-auth fields):
 Design now, build nothing: every core command function takes an `XTransport` instance with
 one method per capability (`createTweet`, `deleteTweet`, `like`, `unlike`, `retweet`,
 `unretweet`, `follow`, `unfollow`, `searchRecent`, `userTweets`, `homeTimeline`, `getUser`,
-`getMe`, `getTweet`). v1 ships exactly one implementation, `ByokTransport`, constructed from
-`config.auth` and calling X API v2 directly with the user's own OAuth1.0a keys.
+`getMe`, `getTweet`). v1 ships exactly one implementation, `ByokTransport`, which constructs
+an `@xdevplatform/xdk` `Client` from `config.auth` (via an `OAuth1` instance) and calls the SDK
+directly with the user's own OAuth 1.0a keys — the SDK is wholly internal to this one class.
 
-Phase 2 adds `ProxyTransport`, same interface, which instead calls a hosted Finch gateway
-(the CEO's X keys, pooled/rate-limited server-side, billing gate) — selected via
+Phase 2 adds `ProxyTransport`, same `XTransport` interface, which instead calls a hosted Finch
+gateway (the CEO's X keys, pooled/rate-limited server-side, billing gate) — selected via
 `config.transport === "proxy"` or a `--proxy` flag, with no changes to command handlers, MCP
-tool code, or the JSON output contracts above. This is the whole point of the seam: adding
-phase 2 is "write `ProxyTransport`, wire the selector," not "rewrite the CLI."
+tool code, or the JSON output contracts above. Whether `ProxyTransport` itself wraps the SDK
+(pointed at Finch's gateway as a custom base URL, if the SDK supports one) or calls the
+gateway's own HTTP API directly is a phase-2 implementation detail to confirm against the
+SDK's config options when phase 2 is designed — not decided now. This is the whole point of
+the seam either way: adding phase 2 is "write `ProxyTransport`, wire the selector," not
+"rewrite the CLI."
 
 Backend/billing stack for the phase-2 gateway is explicitly **not decided here** per the
 brief (Convex+Stripe vs. Vercel+Stripe — the fleet already knows Convex+Stripe, which is a
@@ -347,8 +396,9 @@ point in its favor, but this is a phase-2 decision to make when phase 2 is green
 - **M0 — done.** Repo skeleton (this commit's ancestor: `chore: bootstrap Finch repo
   skeleton`).
 - **M1 — Core + read-only BYOK.** `bun init` proper project (tsconfig, biome/lint, `bun test`
-  wiring), `~/.finch/config` schema + `finch auth`/`auth status`/`config *`/`whoami`,
-  `XTransport` interface + `ByokTransport`, read commands (`timeline`, `search`,
+  wiring), add the `@xdevplatform/xdk` dependency, `~/.finch/config` schema + `finch
+  auth`/`auth status`/`config *`/`whoami` (built on the SDK's `OAuth1` + `client.users.getMe()`,
+  not hand-rolled signing), `XTransport` interface + `ByokTransport`, read commands (`timeline`, `search`,
   `user-posts`, `user`, `show`), universal `--json` + exit-code plumbing, `finch schema`
   introspection command, input validation on id/URL/text arguments, regression checklist
   items 1-7 passable.
@@ -375,6 +425,8 @@ point in its favor, but this is a phase-2 decision to make when phase 2 is green
    (`docs/PLAN.md`) remains the tracking source of record for milestones until the CEO
    decides to stand up a Linear team.
 4. **OAuth model** — **CONFIRMED: OAuth 1.0a** (4 static keys), as already specified in
-   "Setup / Auth" above. No browser-redirect flow in v1.
+   "Setup / Auth" above. No browser-redirect flow in v1. Implemented via the official X
+   TypeScript SDK's `OAuth1` class (see Tech Stack / API), not hand-rolled request signing.
 
-Awaiting: explicit CEO **build-greenlight** before any implementation starts.
+**Build-greenlight: received (low-priority, M1 in progress).** See Tech Stack / API above for
+the SDK-adoption decision the CEO added on plan review before implementation began.
