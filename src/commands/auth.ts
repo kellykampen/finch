@@ -25,8 +25,8 @@ async function promptCredentialsInteractive(): Promise<FinchAuthConfig> {
   const session = createPromptSession();
   try {
     return {
-      apiKey: await session.promptSecret("API Key: "),
-      apiKeySecret: await session.promptSecret("API Key Secret: "),
+      apiKey: await session.promptSecret("Consumer Key: "),
+      apiKeySecret: await session.promptSecret("Consumer Secret: "),
       accessToken: await session.promptSecret("Access Token: "),
       accessTokenSecret: await session.promptSecret("Access Token Secret: "),
     };
