@@ -70,3 +70,14 @@
     builder seats run Claude Sonnet 5, and "Claude reviewing Claude" isn't independent
     regardless of generation — those two agy models are off-limits for this fleet's Gate A
     specifically, even though `agy models` lists them.
+12. **REAL CREDENTIALS ON THIS MACHINE — standing rule, every seat, every task, no exceptions
+    for "docs-only" or "just a smoke test":** `~/.finch/config` on the host `$HOME` holds the
+    CEO's real, live X API credentials. Never read it, print it, `cat` it, or let live
+    verification run against it. When "exercise your change live" (rule 5) means running the
+    compiled binary, ALWAYS do so under a sandboxed `$HOME` (e.g. `HOME=$(mktemp -d) ./finch
+    ...`) — including for read-only/harmless-seeming commands like `finch show`/`whoami`, which
+    still sign a real authenticated request with real keys if pointed at the real config. This
+    was violated twice already this project (once reading the real file's permissions during a
+    review-fix round, once making a real signed API call during a README smoke test) —
+    specifically because it was called out in some briefs and not others. It's not brief-
+    specific: it always applies.
