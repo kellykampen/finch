@@ -291,7 +291,7 @@ describe("ByokTransport.searchRecent", () => {
     let capturedOptions: unknown;
     const transport = new ByokTransport(unusedUsersClient, {
       ...unusedPostsClient,
-      searchRecent: async (query, options) => {
+      searchRecent: async (_query, options) => {
         capturedOptions = options;
         return { data: [{ id: "1", text: "match", authorId: "7" }] };
       },

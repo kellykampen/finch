@@ -57,9 +57,7 @@ describe("runConfigGet", () => {
   });
 
   test("throws USAGE_ERROR for an unknown key", async () => {
-    await expect(
-      runConfigGet(["bogus.key"], { readConfig: () => sampleConfig }),
-    ).rejects.toThrow(FinchError);
+    await expect(runConfigGet(["bogus.key"], { readConfig: () => sampleConfig })).rejects.toThrow(FinchError);
   });
 
   test("throws AUTH_ERROR when no config exists", async () => {
@@ -189,9 +187,7 @@ describe("runConfigSet", () => {
   });
 
   test("throws USAGE_ERROR when key or value is missing", async () => {
-    await expect(
-      runConfigSet(["defaults.count"], { readConfig: () => sampleConfig }),
-    ).rejects.toThrow(FinchError);
+    await expect(runConfigSet(["defaults.count"], { readConfig: () => sampleConfig })).rejects.toThrow(FinchError);
   });
 });
 

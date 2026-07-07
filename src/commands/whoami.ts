@@ -7,9 +7,7 @@ export interface WhoamiDeps {
   transportFactory?: (auth: FinchAuthConfig) => XTransport;
 }
 
-export async function runWhoami(
-  deps: WhoamiDeps = {},
-): Promise<{ data: FinchUser; human: string }> {
+export async function runWhoami(deps: WhoamiDeps = {}): Promise<{ data: FinchUser; human: string }> {
   const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
   const transportFactory = deps.transportFactory ?? createByokTransport;
 

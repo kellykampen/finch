@@ -1,10 +1,4 @@
-import {
-  readConfig,
-  writeConfig,
-  configPath,
-  maskSecret,
-  type FinchConfig,
-} from "../core/config";
+import { readConfig, writeConfig, configPath, maskSecret, type FinchConfig } from "../core/config";
 import { FinchError } from "../core/errors";
 import { parseArgs, resolveCount } from "../core/args";
 
@@ -95,16 +89,17 @@ function parseSettableValue(def: ConfigKeyDef, key: string, raw: string): unknow
   throw new FinchError("USAGE_ERROR", `${key} is not settable via finch config set`);
 }
 
-function setConfigValue(config: FinchConfig, key: string, raw: string): { config: FinchConfig; result: ConfigKeyValue } {
+function setConfigValue(
+  config: FinchConfig,
+  key: string,
+  raw: string,
+): { config: FinchConfig; result: ConfigKeyValue } {
   if (key.startsWith("auth.")) {
-    throw new FinchError(
-      "USAGE_ERROR",
-      `${key} cannot be set via \`finch config set\` — run \`finch auth\` instead.`,
-    );
+    throw new FinchError("USAGE_ERROR", `${key} cannot be set via \`finch config set\` — run \`finch auth\` instead.`);
   }
 
   const def = lookupConfigKeyDef(key);
-  if (!def || !def.settable) {
+  if (!def?.settable) {
     throw new FinchError(
       "USAGE_ERROR",
       `finch config set does not support key: ${key} (only defaults.json, defaults.count are settable)`,

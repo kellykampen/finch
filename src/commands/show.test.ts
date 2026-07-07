@@ -55,8 +55,8 @@ describe("runShow", () => {
       },
     });
 
-    await expect(
-      runShow(["999"], { resolveAuth: () => fakeAuth, transportFactory: () => transport }),
-    ).rejects.toThrow(FinchError);
+    await expect(runShow(["999"], { resolveAuth: () => fakeAuth, transportFactory: () => transport })).rejects.toThrow(
+      FinchError,
+    );
   });
 });

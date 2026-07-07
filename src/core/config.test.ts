@@ -2,21 +2,10 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, statSync, chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import {
-  configPath,
-  readConfig,
-  writeConfig,
-  resolveAuthConfig,
-  maskSecret,
-} from "./config";
+import { configPath, readConfig, writeConfig, resolveAuthConfig, maskSecret } from "./config";
 import { FinchError } from "./errors";
 
-const ENV_KEYS = [
-  "FINCH_API_KEY",
-  "FINCH_API_KEY_SECRET",
-  "FINCH_ACCESS_TOKEN",
-  "FINCH_ACCESS_TOKEN_SECRET",
-] as const;
+const ENV_KEYS = ["FINCH_API_KEY", "FINCH_API_KEY_SECRET", "FINCH_ACCESS_TOKEN", "FINCH_ACCESS_TOKEN_SECRET"] as const;
 
 let fakeHome: string;
 let originalHome: string | undefined;

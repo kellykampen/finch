@@ -45,12 +45,7 @@ describe("createPromptSession (non-TTY fallback used by piped/test input)", () =
     const fourth = await session.promptSecret("Field 4: ");
     session.close();
 
-    expect([first, second, third, fourth]).toEqual([
-      "first-value",
-      "second-value",
-      "third-value",
-      "fourth-value",
-    ]);
+    expect([first, second, third, fourth]).toEqual(["first-value", "second-value", "third-value", "fourth-value"]);
   });
 });
 

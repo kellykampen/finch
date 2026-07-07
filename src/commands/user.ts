@@ -10,10 +10,7 @@ export interface UserDeps {
 }
 
 /** `finch user <username>`: profile lookup. */
-export async function runUser(
-  argv: string[],
-  deps: UserDeps = {},
-): Promise<{ data: FinchUserProfile; human: string }> {
+export async function runUser(argv: string[], deps: UserDeps = {}): Promise<{ data: FinchUserProfile; human: string }> {
   const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
   const transportFactory = deps.transportFactory ?? createByokTransport;
 
