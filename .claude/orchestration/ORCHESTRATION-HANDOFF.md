@@ -18,7 +18,16 @@ through FIN-31 (auth/config/read/write/engage/MCP marked Done; distribution + ha
 Todo). This file + Linear are now both tracking sources; Linear is authoritative for
 issue-level status, this file for fleet/session state.
 
-**CEO directive (current, standing until told otherwise): OVERNIGHT MODE, IDLE.** CEO asleep
+**2026-07-07 morning: README rewrite merged (PR #2, commit cd26b71).** Full landing-page
+README (what/why, install, auth setup, usage examples, agent interface, config) — content
+verified against `docs/PLAN.md` and `src/` before and after independent review. `GPT-OSS 120B`
+failed silently a 3rd time (this time on a simple docs review, not a complex code review) —
+treat it as unreliable in this environment until someone re-validates it; Gemini 3.1 Pro is
+the working fallback. FIN-25 marked Done. M4 brew/distribution (FIN-22–24) still fully Todo.
+Overnight-idle mode below is superseded now that the CEO is active again.
+
+**CEO directive (superseded, kept for context — was standing overnight): OVERNIGHT MODE, IDLE.**
+CEO asleep
 ~8h. Claude quota is the binding limit and must not be exceeded — orchestrator has gone idle
 at a clean stopping point (no seat cast, no worktree open) and is NOT dispatching new builds
 overnight. If work resumes before the CEO wakes, it must use only non-Claude harnesses
