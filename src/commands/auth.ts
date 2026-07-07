@@ -1,11 +1,5 @@
 import { createPromptSession } from "../core/prompt";
-import {
-  readConfig,
-  writeConfig,
-  resolveAuthConfig,
-  type FinchAuthConfig,
-  type FinchConfig,
-} from "../core/config";
+import { readConfig, writeConfig, resolveAuthConfig, type FinchAuthConfig, type FinchConfig } from "../core/config";
 import { createByokTransport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 
@@ -40,9 +34,7 @@ async function promptCredentialsInteractive(): Promise<FinchAuthConfig> {
  * live call, and only writes `~/.finch/config` on success — a typo'd key
  * fails loudly instead of leaving a silently-broken config file.
  */
-export async function runAuth(
-  deps: AuthDeps = {},
-): Promise<{ data: AuthResult; human: string }> {
+export async function runAuth(deps: AuthDeps = {}): Promise<{ data: AuthResult; human: string }> {
   const promptCredentials = deps.promptCredentials ?? promptCredentialsInteractive;
   const transportFactory = deps.transportFactory ?? createByokTransport;
   const readConfigFn = deps.readConfig ?? readConfig;
@@ -83,9 +75,7 @@ export interface AuthStatusDeps {
  * answers this command exists to report, not command failures. Only a
  * genuine failure to check (network, rate-limit) propagates as an error.
  */
-export async function runAuthStatus(
-  deps: AuthStatusDeps = {},
-): Promise<{ data: AuthStatusResult; human: string }> {
+export async function runAuthStatus(deps: AuthStatusDeps = {}): Promise<{ data: AuthStatusResult; human: string }> {
   const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
   const transportFactory = deps.transportFactory ?? createByokTransport;
 

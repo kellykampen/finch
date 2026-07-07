@@ -14,9 +14,7 @@
    **orchestrator** pushes your branch and opens the PR once your work is committed — you don't
    push yourself unless your brief explicitly says so. NEVER touch `main` directly — the
    orchestrator merges via PR once gate 10 below is fully green.
-4. LIMITS: TBD — repo is a pre-implementation skeleton with no established file-size/lint
-   conventions yet. First builder seat to touch real source should propose conventions (linting,
-   max file size, module layout) in a PR the orchestrator reviews, then this line gets filled in.
+4. LIMITS: Biome enforces the codebase style (`bun run lint` / `bun run lint:fix`); keep source modules under ~400 lines and prefer small, focused files.
 5. VERIFY before reporting: `bun run typecheck` (tsc --noEmit) and `bun test` clean, AND exercise
    your change live — run the compiled binary against the real X API (BYOK creds from
    `~/.finch/config` in your worktree's test environment) or, for MCP-surface changes, call the

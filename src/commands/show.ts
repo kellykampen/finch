@@ -10,10 +10,7 @@ export interface ShowDeps {
 }
 
 /** `finch show <id-or-url>`: fetch one post by id. */
-export async function runShow(
-  argv: string[],
-  deps: ShowDeps = {},
-): Promise<{ data: FinchTweet; human: string }> {
+export async function runShow(argv: string[], deps: ShowDeps = {}): Promise<{ data: FinchTweet; human: string }> {
   const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
   const transportFactory = deps.transportFactory ?? createByokTransport;
 

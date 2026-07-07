@@ -112,10 +112,7 @@ interface EngageActionResult {
 
 interface UsersClientLike {
   getMe(): Promise<GetMeResult>;
-  getByUsername(
-    username: string,
-    options?: { userFields?: string[] },
-  ): Promise<ItemResult<UserLike>>;
+  getByUsername(username: string, options?: { userFields?: string[] }): Promise<ItemResult<UserLike>>;
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   likePost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
@@ -127,10 +124,7 @@ interface UsersClientLike {
 }
 
 interface PostsClientLike {
-  create(body: {
-    text?: string;
-    reply?: { in_reply_to_tweet_id: string };
-  }): Promise<ItemResult<TweetLike>>;
+  create(body: { text?: string; reply?: { in_reply_to_tweet_id: string } }): Promise<ItemResult<TweetLike>>;
   getById(id: string, options?: { tweetFields?: string[] }): Promise<ItemResult<TweetLike>>;
   searchRecent(query: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
 }
@@ -176,9 +170,7 @@ export class ByokTransport implements XTransport {
 
   async createTweet(text: string, replyToId?: string): Promise<CreatedTweet> {
     try {
-      const body = replyToId
-        ? { text, reply: { in_reply_to_tweet_id: replyToId } }
-        : { text };
+      const body = replyToId ? { text, reply: { in_reply_to_tweet_id: replyToId } } : { text };
       const res = await this.postsClient.create(body);
       if (!res.data) {
         throw new FinchError("CLIENT_ERROR", "X API did not return the created post", res.errors ?? null);
@@ -386,8 +378,5 @@ export function createByokTransport(auth: FinchAuthConfig): XTransport {
   // ByokTransport actually uses) — TS can't structurally match an overloaded
   // method against our single-signature *ClientLike interfaces, so the cast
   // is required here even though the runtime shapes line up exactly.
-  return new ByokTransport(
-    client.users as unknown as UsersClientLike,
-    client.posts as unknown as PostsClientLike,
-  );
+  return new ByokTransport(client.users as unknown as UsersClientLike, client.posts as unknown as PostsClientLike);
 }

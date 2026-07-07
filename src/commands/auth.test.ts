@@ -126,8 +126,8 @@ describe("runAuthStatus", () => {
       },
     });
 
-    await expect(
-      runAuthStatus({ resolveAuth: () => enteredAuth, transportFactory: () => transport }),
-    ).rejects.toThrow(FinchError);
+    await expect(runAuthStatus({ resolveAuth: () => enteredAuth, transportFactory: () => transport })).rejects.toThrow(
+      FinchError,
+    );
   });
 });

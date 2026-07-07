@@ -10,9 +10,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "build": "bun build --compile ./src/index.ts --outfile finch"
+    "build": "bun build --compile ./src/index.ts --outfile finch",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
     "@types/bun": "latest"
   },
   "peerDependencies": {

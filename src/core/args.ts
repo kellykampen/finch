@@ -6,10 +6,7 @@ export interface ParsedArgs {
   positionals: string[];
 }
 
-export function parseArgs(
-  argv: string[],
-  flags: { valueFlags?: string[]; boolFlags?: string[] } = {},
-): ParsedArgs {
+export function parseArgs(argv: string[], flags: { valueFlags?: string[]; boolFlags?: string[] } = {}): ParsedArgs {
   const valueFlags = new Set(flags.valueFlags ?? []);
   const boolFlags = new Set(flags.boolFlags ?? []);
   const values: Record<string, string> = {};

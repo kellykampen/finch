@@ -98,10 +98,7 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       inputSchema: { idOrUrl: z.string(), text: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
         runTool(() =>
-          runReply(
-            buildArgv([args.idOrUrl as string, args.text as string], { dryRun: args.dryRun as boolean }),
-            deps,
-          ),
+          runReply(buildArgv([args.idOrUrl as string, args.text as string], { dryRun: args.dryRun as boolean }), deps),
         ),
     },
     {
@@ -109,9 +106,7 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       description: "Post a chain of posts, each replying to the previous (maps to `finch thread`).",
       inputSchema: { texts: z.array(z.string()).min(1), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runThread(buildArgv(args.texts as string[], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runThread(buildArgv(args.texts as string[], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "get_timeline",
@@ -124,18 +119,14 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       description: "Recent search, ~7 days of coverage on free/basic tiers (maps to `finch search`).",
       inputSchema: { query: z.string(), count: z.number().int().positive().optional() },
       handler: (args) =>
-        runTool(() =>
-          runSearch(buildArgv([args.query as string], { count: args.count as number }), deps),
-        ),
+        runTool(() => runSearch(buildArgv([args.query as string], { count: args.count as number }), deps)),
     },
     {
       name: "get_user_posts",
       description: "A given user's recent posts (maps to `finch user-posts`).",
       inputSchema: { username: z.string(), count: z.number().int().positive().optional() },
       handler: (args) =>
-        runTool(() =>
-          runUserPosts(buildArgv([args.username as string], { count: args.count as number }), deps),
-        ),
+        runTool(() => runUserPosts(buildArgv([args.username as string], { count: args.count as number }), deps)),
     },
     {
       name: "get_user_profile",
@@ -154,54 +145,42 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       description: "Like a post (maps to `finch like`).",
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runLike(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runLike(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "unlike_tweet",
       description: "Undo a like (maps to `finch unlike`).",
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runUnlike(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runUnlike(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "repost_tweet",
       description: "Repost a post (maps to `finch repost`).",
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runRepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runRepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "unrepost_tweet",
       description: "Undo a repost (maps to `finch unrepost`).",
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runUnrepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runUnrepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "follow_user",
       description: "Follow a user by username (maps to `finch follow`).",
       inputSchema: { username: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runFollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runFollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "unfollow_user",
       description: "Unfollow a user by username (maps to `finch unfollow`).",
       inputSchema: { username: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
-        runTool(() =>
-          runUnfollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps),
-        ),
+        runTool(() => runUnfollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "whoami",

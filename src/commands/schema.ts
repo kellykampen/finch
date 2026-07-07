@@ -16,7 +16,8 @@ export interface CommandSchemaEntry {
 export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   {
     name: "auth",
-    description: "Interactive wizard: prompts for the 4 OAuth1.0a credentials, validates them with a live call, writes ~/.finch/config at 0600.",
+    description:
+      "Interactive wizard: prompts for the 4 OAuth1.0a credentials, validates them with a live call, writes ~/.finch/config at 0600.",
     flags: ["--json"],
     positionals: [],
     endpoint: "SDK client.users.getMe() (validation only)",
@@ -152,7 +153,8 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   },
   {
     name: "config get",
-    description: "Print one config value. Masks auth.* fields to all-but-last-4 characters, whether or not --json is set.",
+    description:
+      "Print one config value. Masks auth.* fields to all-but-last-4 characters, whether or not --json is set.",
     flags: ["--json"],
     positionals: ["<key>"],
     endpoint: "-",
@@ -176,7 +178,8 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   },
   {
     name: "schema",
-    description: "Describe every command's name, flags, X API endpoint, and JSON data shape as a single machine-readable document. Also available as the --describe global flag.",
+    description:
+      "Describe every command's name, flags, X API endpoint, and JSON data shape as a single machine-readable document. Also available as the --describe global flag.",
     flags: ["--json", "--describe"],
     positionals: [],
     endpoint: "-",
