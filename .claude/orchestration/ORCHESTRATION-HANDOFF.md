@@ -73,3 +73,14 @@ again). This is now superseded by full overnight idle, above — do not start th
 2. biome/lint conventions still not set up (FIN-29, M5).
 3. `finch timeline`'s 2-API-call cost (getMe + homeTimeline) could drop to 1 by caching the
    user id in config — noted, not scheduled.
+
+**2026-07-07: real-API E2E test run (no PR, direct orchestrator check).** whoami/reads work.
+Post/like/reply all fail identically: exit 3, AUTH_ERROR, X 403 "oauth1 app permissions" —
+the X Developer Portal app needs Read+Write enabled AND the Access Token/Secret regenerated
+after that change (old token stays locked to old permission level). CEO action item, not a
+Finch bug. No test post found matching "just posted" — most recent own post was ~11.5h old.
+
+**CLAUDE QUOTA CRITICAL (2026-07-07): weekly 80% used, 6.8x pace, dry in ~15.6h, reset 4+ days
+out.** Idle now, no seat cast. Any future work this week: NON-CLAUDE ONLY (GLM/Kimi/agy/Codex)
+for workers AND reviews — zero Sonnet/Fable Claude seats. No new milestones without explicit
+go-ahead.
