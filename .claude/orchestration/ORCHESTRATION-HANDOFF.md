@@ -18,6 +18,18 @@ through FIN-31 (auth/config/read/write/engage/MCP marked Done; distribution + ha
 Todo). This file + Linear are now both tracking sources; Linear is authoritative for
 issue-level status, this file for fleet/session state.
 
+**2026-07-07: self-describing `skills` MCP tool merged (PR #3, commit 06bde6b).** Modeled on
+sibling project `peek`'s identical pattern — registered directly in
+`createFinchMcpServer` (not the generic `tools.ts` loop), reads
+`~/code/agent-skills/skills/agents/finch/SKILL.md` and returns it verbatim so any MCP client
+can self-onboard. That SKILL.md was authored and committed to the **separate**
+`~/code/agent-skills` repo's `main` (commit `34d2877`, matching that repo's established
+direct-to-main convention for additive skill dirs) — **local only, not pushed**, the CEO's
+call whether to push it. README also got a "Quick start for agents" section (paste-ready
+onboarding prompt) and confirmed brew-install line. One review-pass false positive caught and
+rejected (claimed the `skills` tool didn't exist — verified live via a real MCP client that it
+does and works correctly both success/failure paths) before merge.
+
 **2026-07-07 morning: README rewrite merged (PR #2, commit cd26b71).** Full landing-page
 README (what/why, install, auth setup, usage examples, agent interface, config) — content
 verified against `docs/PLAN.md` and `src/` before and after independent review. `GPT-OSS 120B`
