@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build binaries
+        run: bun run build:all
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          for file in finch-*; do
+            sha256sum "$file" > "${file}.sha256"
+          done
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/finch-*
+            dist/*.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: true
