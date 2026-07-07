@@ -22,6 +22,8 @@ import { runWhoami } from "../commands/whoami";
 export interface McpToolDeps {
   resolveAuth?: () => FinchAuthConfig | null;
   transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  /** Override for the `skills` tool's SKILL.md path — see server.ts's defaultSkillPath(). */
+  skillPath?: string;
 }
 
 export interface ToolDefinition {

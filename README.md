@@ -53,6 +53,21 @@ bun run build      # produces ./finch, a standalone binary
 Requires [Bun](https://bun.sh) to build; the resulting `finch` binary has no runtime
 dependency of its own.
 
+## Quick start for agents
+
+Paste this into any agent harness to get it using Finch with zero other context:
+
+```
+Install finch: `brew install kellykampen/finch/finch` (once published — build from
+source per the finch README if brew isn't available yet). Confirm the human running
+you has already run `finch auth` to configure their X credentials into
+~/.finch/config — you can't do this step yourself; if it's not configured, tell the
+human to run `finch auth` and stop. Once configured, either call `finch` commands
+directly with `--json`, or — preferred — start `finch mcp`, connect to it as an MCP
+server, and call its `skills` tool first to self-onboard (it returns Finch's full
+SKILL.md); then use the other MCP tools it describes.
+```
+
 ## Auth setup
 
 Finch needs an X Developer Portal app with **OAuth 1.0a User Context** keys. Create
