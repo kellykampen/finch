@@ -18,6 +18,17 @@ through FIN-31 (auth/config/read/write/engage/MCP marked Done; distribution + ha
 Todo). This file + Linear are now both tracking sources; Linear is authoritative for
 issue-level status, this file for fleet/session state.
 
+**2026-07-07: `docs/` untracked from GitHub (PR #4, commit 6d5cbd6, merge 948a367).**
+`docs/PLAN.md` is gitignored now — kept on local disk (this checkout's copy was actually
+deleted by the fast-forward merge and had to be restored from a manual backup taken first;
+**any other clone/checkout of this repo will lose `docs/PLAN.md` from disk on next pull** and
+needs the same restore-from-a-pre-pull-copy treatment if it wants to keep it locally — this
+isn't automatic). History still has every prior `docs/PLAN.md` commit (repo is private, CEO
+judged that an acceptable risk; no `git filter-repo`/BFG purge done or recommended — flagged
+back to the CEO as not warranted given no real secrets ever lived in `docs/`, only planning
+content, and a history rewrite is disruptive/irreversible for a private repo with no
+indication anything more sensitive is in there).
+
 **2026-07-07: self-describing `skills` MCP tool merged (PR #3, commit 06bde6b).** Modeled on
 sibling project `peek`'s identical pattern — registered directly in
 `createFinchMcpServer` (not the generic `tools.ts` loop), reads
