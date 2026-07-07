@@ -115,8 +115,8 @@ args. Every mutating command supports `--dry-run`, which validates and reports w
 would be sent without calling the API:
 
 ```bash
-finch post "test post" --dry-run
-# {"dryRun":true,"wouldSend":{"text":"test post"}}
+finch post "test post" --dry-run --json
+# {"ok":true,"data":{"dryRun":true,"wouldSend":{"text":"test post"}}}
 ```
 
 **Read:**
