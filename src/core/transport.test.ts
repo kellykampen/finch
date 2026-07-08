@@ -73,6 +73,18 @@ const unusedMediaClient = {
   upload: async () => {
     throw new Error("upload not stubbed for this test");
   },
+  initializeUpload: async () => {
+    throw new Error("initializeUpload not stubbed for this test");
+  },
+  appendUpload: async () => {
+    throw new Error("appendUpload not stubbed for this test");
+  },
+  finalizeUpload: async () => {
+    throw new Error("finalizeUpload not stubbed for this test");
+  },
+  getUploadStatus: async () => {
+    throw new Error("getUploadStatus not stubbed for this test");
+  },
   createMetadata: async () => {
     throw new Error("createMetadata not stubbed for this test");
   },
@@ -445,6 +457,136 @@ describe("ByokTransport.uploadImage", () => {
         expect(err).toBeInstanceOf(FinchError);
         expect((err as FinchError).code).toBe("CLIENT_ERROR");
         expect((err as FinchError).message).toBe("X API did not return a media ID");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("ByokTransport.uploadVideo", () => {
+  test("runs the chunked upload lifecycle and polls until processing succeeds", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-video-upload-test-"));
+    try {
+      const path = join(dir, "clip.mp4");
+      writeFileSync(path, Buffer.from("fake-video-bytes"));
+
+      const calls: unknown[] = [];
+      const statuses: string[] = [];
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
+        initializeUpload: async (options) => {
+          calls.push(["init", options.body]);
+          return { data: { id: "media-123", media_key: "13_media-123" } };
+        },
+        appendUpload: async (id, options) => {
+          calls.push(["append", id, options.body]);
+          return { data: {} };
+        },
+        finalizeUpload: async (id) => {
+          calls.push(["finalize", id]);
+          return { data: { id, processing_info: { state: "pending", check_after_secs: 0 } } };
+        },
+        getUploadStatus: async (id, options) => {
+          calls.push(["status", id, options]);
+          return { data: { id, processing_info: { state: "succeeded" } } };
+        },
+      });
+
+      const result = await transport.uploadVideo(path, (message) => statuses.push(message));
+
+      expect(result).toEqual({ media_id: "media-123" });
+      expect(statuses).toEqual([
+        "Initializing video upload (16 bytes)",
+        "Uploaded 16 bytes of 16 bytes",
+        "Finalizing media upload",
+        "Media processing pending; checking again in 0s",
+        "Media processing succeeded",
+      ]);
+      expect(calls).toEqual([
+        [
+          "init",
+          {
+            mediaCategory: "tweet_video",
+            mediaType: "video/mp4",
+            totalBytes: Buffer.byteLength("fake-video-bytes"),
+          },
+        ],
+        [
+          "append",
+          "media-123",
+          {
+            media: Buffer.from("fake-video-bytes").toString("base64"),
+            segmentIndex: 0,
+          },
+        ],
+        ["finalize", "media-123"],
+        ["status", "media-123", { command: "STATUS" }],
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("throws CLIENT_ERROR when processing status fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-video-upload-test-"));
+    try {
+      const path = join(dir, "clip.gif");
+      writeFileSync(path, Buffer.from("fake-gif-bytes"));
+
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
+        initializeUpload: async () => ({ data: { id: "media-456" } }),
+        appendUpload: async () => ({ data: {} }),
+        finalizeUpload: async () => ({
+          data: { id: "media-456", processing_info: { state: "in_progress", check_after_secs: 0 } },
+        }),
+        getUploadStatus: async () => ({
+          data: {
+            id: "media-456",
+            processing_info: {
+              state: "failed",
+              error: { name: "InvalidMedia", message: "transcode failed" },
+            },
+          },
+        }),
+      });
+
+      await expect(transport.uploadVideo(path)).rejects.toThrow(FinchError);
+      try {
+        await transport.uploadVideo(path);
+      } catch (err) {
+        expect(err).toBeInstanceOf(FinchError);
+        expect((err as FinchError).code).toBe("CLIENT_ERROR");
+        expect((err as FinchError).message).toContain("Media processing failed");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects oversized media before starting upload", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-video-upload-test-"));
+    try {
+      const path = join(dir, "too-big.gif");
+      writeFileSync(path, Buffer.alloc(16 * 1024 * 1024));
+      let initialized = false;
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
+        initializeUpload: async () => {
+          initialized = true;
+          return { data: { id: "nope" } };
+        },
+      });
+
+      await expect(transport.uploadVideo(path)).rejects.toThrow(FinchError);
+      expect(initialized).toBe(false);
+      try {
+        await transport.uploadVideo(path);
+      } catch (err) {
+        expect(err).toBeInstanceOf(FinchError);
+        expect((err as FinchError).code).toBe("USAGE_ERROR");
+        expect((err as FinchError).message).toContain("exceeds the 15 MB limit");
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });

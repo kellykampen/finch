@@ -196,6 +196,85 @@ describe("runPost", () => {
     expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-pic.png"] });
   });
 
+  test("--media <gif|mp4> uses chunked upload and attaches the returned media ID", async () => {
+    const uploadedVideos: string[] = [];
+    let imageUploadCalled = false;
+    let createdWith: { text?: string; mediaIds?: string[] } = {};
+    const transport = fakeTransport({
+      uploadImage: async () => {
+        imageUploadCalled = true;
+        throw new Error("should not upload video as image");
+      },
+      uploadVideo: async (path) => {
+        uploadedVideos.push(path);
+        return { media_id: `video-id-for-${path}` };
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        createdWith = { text, mediaIds };
+        return { id: "1", text };
+      },
+    });
+
+    const result = await runPost(["hello", "--media", "clip.mp4"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ id: "1", text: "hello" });
+    expect(uploadedVideos).toEqual(["clip.mp4"]);
+    expect(imageUploadCalled).toBe(false);
+    expect(createdWith).toEqual({ text: "hello", mediaIds: ["video-id-for-clip.mp4"] });
+  });
+
+  test("rejects multiple gif/video media files", async () => {
+    await expect(
+      runPost(["hello", "--media", "a.mp4,b.gif"], { getTransport: () => fakeTransport({}) }),
+    ).rejects.toThrow(FinchError);
+    try {
+      await runPost(["hello", "--media", "a.mp4,b.gif"], { getTransport: () => fakeTransport({}) });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("Only one GIF or video");
+    }
+  });
+
+  test("rejects mixing image media with gif/video media", async () => {
+    await expect(
+      runPost(["hello", "--media", "a.png", "--media", "b.mp4"], { getTransport: () => fakeTransport({}) }),
+    ).rejects.toThrow(FinchError);
+    try {
+      await runPost(["hello", "--media", "a.png", "--media", "b.mp4"], { getTransport: () => fakeTransport({}) });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("Cannot mix images with GIF/video media");
+    }
+  });
+
+  test("rejects unsupported media extensions before calling the transport", async () => {
+    let called = false;
+    const transport = fakeTransport({
+      uploadImage: async () => {
+        called = true;
+        return { media_id: "x" };
+      },
+      uploadVideo: async () => {
+        called = true;
+        return { media_id: "x" };
+      },
+    });
+
+    await expect(runPost(["hello", "--media", "archive.zip"], { getTransport: () => transport })).rejects.toThrow(
+      FinchError,
+    );
+    expect(called).toBe(false);
+    try {
+      await runPost(["hello", "--media", "archive.zip"], { getTransport: () => transport });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("Unsupported media type");
+    }
+  });
+
   test("--media is repeatable to attach up to 4 images", async () => {
     let createdWith: { text?: string; mediaIds?: string[] } = {};
     const transport = fakeTransport({
