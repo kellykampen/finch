@@ -263,4 +263,5 @@ finch config path                  # prints the resolved ~/.finch/config path
 
 Only `defaults.json` and `defaults.count` are settable via `finch config set` — the
 five `auth.*` fields (`clientId`, `accessToken`, `refreshToken`, `expiresAt`, `scopes`)
-are read-only outside the `finch auth` wizard, and always masked when read back.
+are read-only outside the `finch auth` wizard. The credentials (`clientId`,
+`accessToken`, and `refreshToken`) are always masked when read back.
