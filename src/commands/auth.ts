@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
+import { OAuth2, generateCodeChallenge, generateCodeVerifier, type OAuth2Token } from "@xdevplatform/xdk";
 import { createPromptSession } from "../core/prompt";
 import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
 import { createOAuth2Transport, type XTransport } from "../core/transport";
@@ -30,6 +30,7 @@ const AUTH_SUCCESS_HTML = "<html><body>Authenticated — you can close this tab.
 interface OAuth2ClientLike {
   getAuthorizationUrl(state?: string): Promise<string>;
   exchangeCode(code: string, codeVerifier?: string): Promise<OAuth2Token>;
+  setPkceParameters(codeVerifier: string, codeChallenge?: string): Promise<void>;
 }
 
 interface CallbackCode {
@@ -85,12 +86,18 @@ async function startLocalCallbackServer(redirectUri: string, expectedState: stri
     throw new FinchError("INTERNAL_ERROR", `Invalid redirect URI port: ${url.port}`);
   }
 
+  const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+
   let resolveCode: ((value: CallbackCode) => void) | null = null;
   let rejectCode: ((err: Error) => void) | null = null;
   const codePromise = new Promise<CallbackCode>((resolve, reject) => {
     resolveCode = resolve;
     rejectCode = reject;
   });
+
+  const timeoutId = setTimeout(() => {
+    rejectCode?.(new FinchError("AUTH_ERROR", "OAuth callback timed out waiting for authorization code"));
+  }, CALLBACK_TIMEOUT_MS);
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -103,15 +110,12 @@ async function startLocalCallbackServer(redirectUri: string, expectedState: stri
       const code = reqUrl.searchParams.get("code");
       const state = reqUrl.searchParams.get("state") ?? "";
       if (!code) {
-        const err = new FinchError("AUTH_ERROR", "OAuth callback missing authorization code");
-        rejectCode?.(err);
         return new Response("Error: missing authorization code", { status: 400 });
       }
       if (state !== expectedState) {
-        const err = new FinchError("AUTH_ERROR", "OAuth callback state mismatch — possible CSRF attack");
-        rejectCode?.(err);
         return new Response("Error: state mismatch", { status: 403 });
       }
+      clearTimeout(timeoutId);
       resolveCode?.({ code, state });
       return new Response(AUTH_SUCCESS_HTML, { headers: { "Content-Type": "text/html" } });
     },
@@ -119,7 +123,10 @@ async function startLocalCallbackServer(redirectUri: string, expectedState: stri
 
   return {
     waitForCode: () => codePromise,
-    stop: () => server.stop(true),
+    stop: () => {
+      clearTimeout(timeoutId);
+      server.stop(true);
+    },
   };
 }
 
@@ -172,6 +179,9 @@ export async function runAuth(options: RunAuthOptions = {}): Promise<{ data: Aut
   });
 
   const state = crypto.randomUUID();
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = await generateCodeChallenge(codeVerifier);
+  await oauth2.setPkceParameters(codeVerifier, codeChallenge);
   const authorizationUrl = await oauth2.getAuthorizationUrl(state);
 
   const server = await (deps.startCallbackServer ?? startLocalCallbackServer)(OAUTH2_REDIRECT_URI, state);
@@ -193,7 +203,7 @@ export async function runAuth(options: RunAuthOptions = {}): Promise<{ data: Aut
     throw new FinchError("AUTH_ERROR", "OAuth callback state mismatch — possible CSRF attack");
   }
 
-  const token = await oauth2.exchangeCode(callback.code);
+  const token = await oauth2.exchangeCode(callback.code, codeVerifier);
 
   const transport = (deps.createTransport ?? createOAuth2Transport)(token.access_token);
   const me = await transport.getMe();
