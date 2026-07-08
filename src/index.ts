@@ -17,6 +17,7 @@ import { runUnrepost } from "./commands/unrepost";
 import { runFollow } from "./commands/follow";
 import { runUnfollow } from "./commands/unfollow";
 import { runDelete } from "./commands/delete";
+import { runArticleDraft } from "./commands/article";
 import {
   runBookmarkList,
   runBookmarkAdd,
@@ -85,6 +86,9 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   }
   if (cmd === "delete") {
     return runDelete(args.slice(1));
+  }
+  if (cmd === "article" && sub === "draft") {
+    return runArticleDraft(args.slice(2));
   }
   if (cmd === "bookmark" && sub === "list") {
     return runBookmarkList(args.slice(2));

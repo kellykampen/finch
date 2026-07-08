@@ -35,32 +35,35 @@ export async function runThread(
 
   const { values, bools, positionals } = parseArgs(argv, {
     valueFlags: ["--file", "--delimiter", "--continue"],
-    boolFlags: ["--dry-run"],
+    boolFlags: ["--dry-run", "--number"],
   });
 
   const texts = resolveTexts(positionals, values);
   if (texts.length === 0) {
     throw new FinchError("USAGE_ERROR", "finch thread requires at least one post (positional args or --file)");
   }
-  texts.forEach(validatePostText);
+
+  const numberedTexts = bools["--number"] ? texts.map((text, i) => `${i + 1}/${texts.length} ${text}`) : texts;
+
+  numberedTexts.forEach(validatePostText);
 
   let previousId: string | undefined =
     values["--continue"] !== undefined ? extractTweetId(values["--continue"]) : undefined;
 
   if (bools["--dry-run"]) {
     return {
-      data: { dryRun: true, wouldSend: texts.map((text) => ({ text })) },
+      data: { dryRun: true, wouldSend: numberedTexts.map((text) => ({ text })) },
       human:
         previousId !== undefined
-          ? `Would post a thread of ${texts.length} posts continuing from ${previousId}`
-          : `Would post a thread of ${texts.length} posts`,
+          ? `Would post a thread of ${numberedTexts.length} posts continuing from ${previousId}`
+          : `Would post a thread of ${numberedTexts.length} posts`,
     };
   }
 
   const transport = getTransport();
 
   const ids: string[] = [];
-  for (const text of texts) {
+  for (const text of numberedTexts) {
     try {
       const created = await transport.createTweet(text, previousId);
       ids.push(created.id);

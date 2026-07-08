@@ -60,8 +60,8 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   {
     name: "thread",
     description:
-      "Post a chain: first call is post, each subsequent is a reply to the previous response's id. With --file, posts are split on blank lines (paragraphs); use --delimiter to split on a literal string instead.",
-    flags: ["--json", "--dry-run", "--file <path>", "--delimiter <string>", "--continue <id-or-url>"],
+      "Post a chain: first call is post, each subsequent is a reply to the previous response's id. With --file, posts are split on blank lines (paragraphs); use --delimiter to split on a literal string instead. --number prefixes each post with i/n. --continue <id-or-url> appends this chain onto an existing tweet instead of starting fresh.",
+    flags: ["--json", "--dry-run", "--file <path>", "--delimiter <string>", "--number", "--continue <id-or-url>"],
     positionals: ["<text1>", "<text2>", "..."],
     endpoint: "POST /2/tweets x N, chained",
     dataShape: "{ ids: string[], count: number }",
@@ -163,11 +163,19 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ deleted: true, tweet_id: string }",
   },
   {
+    name: "article draft",
+    description: "Create an article draft from a markdown file.",
+    flags: ["--json", "--cover <path>"],
+    positionals: ["<title>", "<markdown-file-path>"],
+    endpoint: "POST /2/articles/draft { title, content_state } (+ POST /2/media/upload for --cover)",
+    dataShape: "{ id: string }",
+  },
+  {
     name: "bookmark list",
-    description: "Fetch the authenticated user's bookmarked posts.",
-    flags: ["--json", "-n <count>", "--count <count>"],
+    description: "Fetch the authenticated user's bookmarked posts, optionally scoped to a bookmark folder.",
+    flags: ["--json", "-n <count>", "--count <count>", "--folder <id>"],
     positionals: [],
-    endpoint: "GET /2/users/:id/bookmarks",
+    endpoint: "GET /2/users/:id/bookmarks or GET /2/users/:id/bookmarks/folders/:folder_id/bookmarks",
     dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
   },
   {
@@ -180,10 +188,10 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   },
   {
     name: "bookmark add",
-    description: "Bookmark a post.",
-    flags: ["--json", "--dry-run"],
+    description: "Bookmark a post, optionally into a bookmark folder.",
+    flags: ["--json", "--dry-run", "--folder <id>"],
     positionals: ["<id-or-url>"],
-    endpoint: "POST /2/users/:id/bookmarks",
+    endpoint: "POST /2/users/:id/bookmarks or POST /2/users/:id/bookmarks/folders/:folder_id/bookmarks",
     dataShape: "{ bookmarked: true, tweet_id: string }",
   },
   {

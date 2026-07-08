@@ -25,6 +25,8 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     removeBookmark: notImplemented("removeBookmark"),
     listBookmarkFolders: notImplemented("listBookmarkFolders"),
     createBookmarkFolder: notImplemented("createBookmarkFolder"),
+    listBookmarksInFolder: notImplemented("listBookmarksInFolder"),
+    addBookmarkToFolder: notImplemented("addBookmarkToFolder"),
     getUserByUsername: notImplemented("getUserByUsername"),
     like: notImplemented("like"),
     unlike: notImplemented("unlike"),
@@ -36,6 +38,7 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     uploadImage: notImplemented("uploadImage"),
     uploadVideo: notImplemented("uploadVideo"),
     setMediaAltText: notImplemented("setMediaAltText"),
+    createArticleDraft: notImplemented("createArticleDraft"),
     ...overrides,
   };
 }

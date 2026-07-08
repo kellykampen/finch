@@ -72,6 +72,8 @@ export interface XTransport {
   removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
   listBookmarkFolders(userId: string): Promise<FinchBookmarkFolder[]>;
   createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder>;
+  listBookmarksInFolder(userId: string, folderId: string, maxResults: number): Promise<FinchTweet[]>;
+  addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
   unlike(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -83,6 +85,7 @@ export interface XTransport {
   uploadImage(path: string): Promise<{ media_id: string }>;
   uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }>;
   setMediaAltText(mediaId: string, altText: string): Promise<void>;
+  createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }>;
 }
 
 interface GetMeResult {
@@ -145,6 +148,7 @@ interface UsersClientLike {
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarks(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  getBookmarksByFolderId(id: string, folderId: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarkFolders(
     id: string,
     options?: {
@@ -403,6 +407,43 @@ export class ByokTransport implements XTransport {
     }
   }
 
+  async listBookmarksInFolder(userId: string, folderId: string, maxResults: number): Promise<FinchTweet[]> {
+    try {
+      const res = await this.usersClient.getBookmarksByFolderId(userId, folderId, {
+        maxResults,
+        tweetFields: TWEET_FIELDS,
+      });
+      return (res.data ?? []).map(shapeTweet);
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "listBookmarksInFolder");
+    }
+  }
+
+  async addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus> {
+    if (!this.rawClient) {
+      throw new FinchError("CLIENT_ERROR", "X SDK client does not expose bookmark folder membership", null);
+    }
+
+    try {
+      const res = (await this.rawClient.request(
+        "POST",
+        `/2/users/${encodeURIComponent(userId)}/bookmarks/folders/${encodeURIComponent(folderId)}/bookmarks`,
+        {
+          body: JSON.stringify({ tweet_id: tweetId }),
+          security: [{ OAuth2UserToken: ["bookmark.write", "tweet.read", "users.read"] }],
+        },
+      )) as ItemResult<Record<string, unknown>>;
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the bookmark folder addition", res.errors ?? null);
+      }
+      return { bookmarked: (res.data.bookmarked as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "addBookmarkToFolder");
+    }
+  }
+
   async getUserByUsername(username: string): Promise<FinchUserProfile> {
     try {
       const res = await this.usersClient.getByUsername(username, { userFields: USER_FIELDS });
@@ -608,6 +649,34 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "setMediaAltText");
     }
   }
+
+  async createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }> {
+    if (!this.rawClient) {
+      throw new FinchError("CLIENT_ERROR", "X SDK client does not expose article draft creation", null);
+    }
+
+    const body: { title: string; content_state: object; cover_media?: { media_id: string } } = {
+      title,
+      content_state: contentState,
+    };
+    if (coverMediaId !== undefined) {
+      body.cover_media = { media_id: coverMediaId };
+    }
+
+    try {
+      const res = (await this.rawClient.request("POST", "/2/articles/draft", {
+        body: JSON.stringify(body),
+        security: [{ OAuth2UserToken: ["tweet.write"] }],
+      })) as ItemResult<unknown>;
+      if (!res.data || typeof (res.data as { id?: unknown }).id !== "string") {
+        throw new FinchError("CLIENT_ERROR", "X API did not return the created article draft", res.errors ?? null);
+      }
+      return { id: (res.data as { id: string }).id };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "createArticleDraft");
+    }
+  }
 }
 
 const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
@@ -792,12 +861,18 @@ function mapSdkError(err: unknown, operation?: string): FinchError {
         return new FinchError("CLIENT_ERROR", "Your X API tier does not include search access.", err.data ?? null);
       }
       if (
-        (operation === "listBookmarkFolders" || operation === "createBookmarkFolder") &&
+        (operation === "listBookmarkFolders" ||
+          operation === "createBookmarkFolder" ||
+          operation === "listBookmarksInFolder" ||
+          operation === "addBookmarkToFolder") &&
         isBookmarkFoldersPremiumForbidden(err)
       ) {
         return new FinchError("CLIENT_ERROR", "Bookmark folders require X Premium.", err.data ?? null);
       }
-      if ((operation === "addBookmark" || operation === "removeBookmark") && isBookmarkWriteForbidden(err)) {
+      if (
+        (operation === "addBookmark" || operation === "removeBookmark" || operation === "addBookmarkToFolder") &&
+        isBookmarkWriteForbidden(err)
+      ) {
         return new FinchError(
           "AUTH_ERROR",
           "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
@@ -967,6 +1042,16 @@ class RefreshingOAuth2Transport implements XTransport {
     return t.createBookmarkFolder(userId, name);
   }
 
+  async listBookmarksInFolder(userId: string, folderId: string, maxResults: number): Promise<FinchTweet[]> {
+    const t = await this.ensureFreshToken();
+    return t.listBookmarksInFolder(userId, folderId, maxResults);
+  }
+
+  async addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus> {
+    const t = await this.ensureFreshToken();
+    return t.addBookmarkToFolder(userId, folderId, tweetId);
+  }
+
   async getUserByUsername(username: string): Promise<FinchUserProfile> {
     const t = await this.ensureFreshToken();
     return t.getUserByUsername(username);
@@ -1020,6 +1105,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async setMediaAltText(mediaId: string, altText: string): Promise<void> {
     const t = await this.ensureFreshToken();
     return t.setMediaAltText(mediaId, altText);
+  }
+
+  async createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }> {
+    const t = await this.ensureFreshToken();
+    return t.createArticleDraft(title, contentState, coverMediaId);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {

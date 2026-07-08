@@ -31,11 +31,14 @@ export async function runBookmarkList(
       ? Math.min(configuredDefault, MAX_COUNT)
       : DEFAULT_COUNT;
 
-  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count"] });
+  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"] });
   const countFlag = values["-n"] !== undefined ? "-n" : "--count";
   const count = resolveCount(values["-n"] ?? values["--count"], defaultCount, countFlag);
+  const folderId = values["--folder"];
 
-  const posts = await transport.listBookmarks(me.id, count);
+  const posts = folderId
+    ? await transport.listBookmarksInFolder(me.id, folderId, count)
+    : await transport.listBookmarks(me.id, count);
   return { data: { posts }, human: formatPosts(posts) };
 }
 
@@ -46,7 +49,7 @@ export interface BookmarkStatusResult {
 
 export interface BookmarkDryRunResult {
   dryRun: true;
-  wouldSend: { tweet_id: string };
+  wouldSend: { tweet_id: string; folder_id?: string };
 }
 
 export interface BookmarkAddDeps {
@@ -60,24 +63,35 @@ export async function runBookmarkAdd(
 ): Promise<{ data: BookmarkStatusResult | BookmarkDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals, values } = parseArgs(argv, {
+    boolFlags: ["--dry-run"],
+    valueFlags: ["--folder"],
+  });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch bookmark add requires <id-or-url>");
   }
   const tweetId = extractTweetId(idOrUrl);
+  const folderId = values["--folder"];
 
   if (bools["--dry-run"]) {
     return {
-      data: { dryRun: true, wouldSend: { tweet_id: tweetId } },
-      human: `Would bookmark ${tweetId}`,
+      data: { dryRun: true, wouldSend: { tweet_id: tweetId, ...(folderId && { folder_id: folderId }) } },
+      human: folderId ? `Would bookmark ${tweetId} in folder ${folderId}` : `Would bookmark ${tweetId}`,
     };
   }
 
   const transport = getTransport();
   const me = await transport.getMe();
-  await transport.addBookmark(me.id, tweetId);
-  return { data: { bookmarked: true, tweet_id: tweetId }, human: `Bookmarked ${tweetId}` };
+  if (folderId) {
+    await transport.addBookmarkToFolder(me.id, folderId, tweetId);
+  } else {
+    await transport.addBookmark(me.id, tweetId);
+  }
+  return {
+    data: { bookmarked: true, tweet_id: tweetId },
+    human: folderId ? `Bookmarked ${tweetId} in folder ${folderId}` : `Bookmarked ${tweetId}`,
+  };
 }
 
 export interface BookmarkRemoveDeps {
