@@ -9,6 +9,7 @@ const ALL_COMMANDS = [
   "reply",
   "thread",
   "timeline",
+  "bookmark list",
   "search",
   "user-posts",
   "user",

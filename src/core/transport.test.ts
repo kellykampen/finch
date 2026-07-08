@@ -22,6 +22,9 @@ const unusedUsersClient = {
   getTimeline: async () => {
     throw new Error("getTimeline not stubbed for this test");
   },
+  getBookmarks: async () => {
+    throw new Error("getBookmarks not stubbed for this test");
+  },
   likePost: async () => {
     throw new Error("likePost not stubbed for this test");
   },
@@ -434,6 +437,60 @@ describe("ByokTransport.homeTimeline", () => {
     const posts = await transport.homeTimeline("42", 10);
 
     expect(posts).toEqual([{ id: "1", text: "home", author_id: null, created_at: null }]);
+  });
+});
+
+describe("ByokTransport.listBookmarks", () => {
+  test("shapes each result", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarks: async () => ({ data: [{ id: "1", text: "saved" }] }),
+      },
+      unusedPostsClient,
+    );
+
+    const posts = await transport.listBookmarks("42", 10);
+
+    expect(posts).toEqual([{ id: "1", text: "saved", author_id: null, created_at: null }]);
+  });
+
+  test("passes maxResults and tweetFields to the SDK", async () => {
+    let capturedOptions: unknown;
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarks: async (_id, options) => {
+          capturedOptions = options;
+          return { data: [] };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    await transport.listBookmarks("42", 25);
+
+    expect(capturedOptions).toEqual({ maxResults: 25, tweetFields: ["author_id", "created_at"] });
+  });
+
+  test("maps a 401 ApiError to AUTH_ERROR", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarks: async () => {
+          throw new ApiError("Unauthorized", 401, "Unauthorized", new Headers(), null);
+        },
+      },
+      unusedPostsClient,
+    );
+
+    await expect(transport.listBookmarks("42", 10)).rejects.toThrow(FinchError);
+    try {
+      await transport.listBookmarks("42", 10);
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+    }
   });
 });
 
