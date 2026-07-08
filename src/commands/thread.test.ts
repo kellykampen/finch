@@ -86,6 +86,84 @@ describe("runThread", () => {
     await expect(runThread([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
+  test("--number prefixes each post with 1-indexed i/n", async () => {
+    const sent: string[] = [];
+    const transport = fakeTransport({
+      createTweet: async (text) => {
+        sent.push(text);
+        return { id: String(sent.length), text };
+      },
+    });
+
+    const result = await runThread(["--number", "first", "second"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+    expect(sent).toEqual(["1/2 first", "2/2 second"]);
+  });
+
+  test("--number works for three or more posts", async () => {
+    const sent: string[] = [];
+    const transport = fakeTransport({
+      createTweet: async (text) => {
+        sent.push(text);
+        return { id: String(sent.length), text };
+      },
+    });
+
+    await runThread(["--number", "a", "b", "c"], { getTransport: () => transport });
+
+    expect(sent).toEqual(["1/3 a", "2/3 b", "3/3 c"]);
+  });
+
+  test("numbering is off by default", async () => {
+    const sent: string[] = [];
+    const transport = fakeTransport({
+      createTweet: async (text) => {
+        sent.push(text);
+        return { id: String(sent.length), text };
+      },
+    });
+
+    await runThread(["first", "second"], { getTransport: () => transport });
+
+    expect(sent).toEqual(["first", "second"]);
+  });
+
+  test("--dry-run reflects numbered text", async () => {
+    const result = await runThread(["--number", "--dry-run", "first", "second"], {
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: [{ text: "1/2 first" }, { text: "2/2 second" }],
+    });
+  });
+
+  test("numbering that pushes a near-limit post over the limit throws a USAGE_ERROR", async () => {
+    const atLimit = "x".repeat(280);
+    const transport = fakeTransport({
+      createTweet: async () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    await expect(runThread(["--number", atLimit, "second"], { getTransport: () => transport })).rejects.toThrow(
+      FinchError,
+    );
+
+    try {
+      await runThread(["--number", atLimit, "second"], { getTransport: () => transport });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("USAGE_ERROR");
+      expect(finchErr.message).toContain("exceeds 280 characters");
+    }
+  });
+
   test("throws USAGE_ERROR when both positional args and --file are given", async () => {
     const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
     try {

@@ -22,4 +22,12 @@ describe("validatePostText", () => {
   test("rejects text containing a NUL byte", () => {
     expect(() => validatePostText("hello\x00world")).toThrow(FinchError);
   });
+
+  test("rejects text exceeding the post length limit", () => {
+    expect(() => validatePostText("x".repeat(281))).toThrow(FinchError);
+  });
+
+  test("accepts text exactly at the post length limit", () => {
+    expect(() => validatePostText("x".repeat(280))).not.toThrow();
+  });
 });
