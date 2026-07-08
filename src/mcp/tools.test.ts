@@ -276,12 +276,12 @@ describe("createTools", () => {
     const result = await toolByName(tools, "post_tweet").handler({
       text: "hello",
       dryRun: true,
-      media: [{ path: "--dry-run", alt: "--media" }],
+      media: [{ path: "--dry-run.png", alt: "--media" }],
     });
 
     expect(result.structuredContent).toEqual({
       dryRun: true,
-      wouldSend: { text: "hello", media: ["--dry-run"], alt: ["--media"] },
+      wouldSend: { text: "hello", media: ["--dry-run.png"], alt: ["--media"] },
     });
   });
 
