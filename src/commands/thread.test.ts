@@ -24,7 +24,7 @@ describe("runThread", () => {
     expect(replyToIds).toEqual([undefined, "1", "2"]);
   });
 
-  test("reads one post per line from --file", async () => {
+  test("reads posts split on blank lines from --file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
     try {
       const path = join(dir, "thread.txt");
@@ -39,10 +39,90 @@ describe("runThread", () => {
 
       const result = await runThread(["--file", path], { getTransport: () => transport });
 
-      expect(result.data).toEqual({ ids: ["1", "2", "3"], count: 3 });
+      expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("preserves multi-line paragraphs from --file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "line one\nline two\n\nparagraph two\n");
+      const texts: string[] = [];
+      let counter = 0;
+      const transport = fakeTransport({
+        createTweet: async (text) => {
+          counter += 1;
+          texts.push(text);
+          return { id: String(counter), text };
+        },
+      });
+
+      const result = await runThread(["--file", path], { getTransport: () => transport });
+
+      expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+      expect(texts).toEqual(["line one\nline two", "paragraph two"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("collapses multiple blank lines between paragraphs from --file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "\n\nfirst\n\n\n\nsecond\n\n");
+      const texts: string[] = [];
+      let counter = 0;
+      const transport = fakeTransport({
+        createTweet: async (text) => {
+          counter += 1;
+          texts.push(text);
+          return { id: String(counter), text };
+        },
+      });
+
+      const result = await runThread(["--file", path], { getTransport: () => transport });
+
+      expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+      expect(texts).toEqual(["first", "second"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("splits on --delimiter when provided with --file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "one<!--SPLIT-->two<!--SPLIT-->three");
+      const texts: string[] = [];
+      let counter = 0;
+      const transport = fakeTransport({
+        createTweet: async (text) => {
+          counter += 1;
+          texts.push(text);
+          return { id: String(counter), text };
+        },
+      });
+
+      const result = await runThread(["--file", path, "--delimiter", "<!--SPLIT-->"], {
+        getTransport: () => transport,
+      });
+
+      expect(result.data).toEqual({ ids: ["1", "2", "3"], count: 3 });
+      expect(texts).toEqual(["one", "two", "three"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("throws USAGE_ERROR when --delimiter is given without --file", async () => {
+    await expect(runThread(["--delimiter", "<!--SPLIT-->"], { getTransport: () => fakeTransport({}) })).rejects.toThrow(
+      FinchError,
+    );
   });
 
   test("on partial failure, throws with what succeeded plus the failure in detail", async () => {
