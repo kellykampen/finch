@@ -75,7 +75,8 @@ export async function runBookmarkAdd(
   }
 
   const transport = getTransport();
-  await transport.addBookmark(tweetId);
+  const me = await transport.getMe();
+  await transport.addBookmark(me.id, tweetId);
   return { data: { bookmarked: true, tweet_id: tweetId }, human: `Bookmarked ${tweetId}` };
 }
 
@@ -105,6 +106,7 @@ export async function runBookmarkRemove(
   }
 
   const transport = getTransport();
-  await transport.removeBookmark(tweetId);
+  const me = await transport.getMe();
+  await transport.removeBookmark(me.id, tweetId);
   return { data: { bookmarked: false, tweet_id: tweetId }, human: `Removed bookmark ${tweetId}` };
 }

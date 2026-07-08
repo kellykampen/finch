@@ -62,8 +62,8 @@ export interface XTransport {
   userTweets(userId: string, maxResults: number): Promise<FinchTweet[]>;
   homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]>;
   listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]>;
-  addBookmark(tweetId: string): Promise<BookmarkStatus>;
-  removeBookmark(tweetId: string): Promise<BookmarkStatus>;
+  addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
+  removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
   unlike(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -264,10 +264,9 @@ export class ByokTransport implements XTransport {
     }
   }
 
-  async addBookmark(tweetId: string): Promise<BookmarkStatus> {
+  async addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
     try {
-      const me = await this.getMe();
-      const res = await this.usersClient.createBookmark(me.id, { tweetId });
+      const res = await this.usersClient.createBookmark(userId, { tweetId });
       if (!res.data) {
         throw new FinchError("CLIENT_ERROR", "X API did not confirm the bookmark", res.errors ?? null);
       }
@@ -278,10 +277,9 @@ export class ByokTransport implements XTransport {
     }
   }
 
-  async removeBookmark(tweetId: string): Promise<BookmarkStatus> {
+  async removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
     try {
-      const me = await this.getMe();
-      const res = await this.usersClient.deleteBookmark(me.id, tweetId);
+      const res = await this.usersClient.deleteBookmark(userId, tweetId);
       if (!res.data) {
         throw new FinchError("CLIENT_ERROR", "X API did not confirm the bookmark removal", res.errors ?? null);
       }
@@ -541,14 +539,14 @@ class RefreshingOAuth2Transport implements XTransport {
     return t.listBookmarks(userId, maxResults);
   }
 
-  async addBookmark(tweetId: string): Promise<BookmarkStatus> {
+  async addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
     const t = await this.ensureFreshToken();
-    return t.addBookmark(tweetId);
+    return t.addBookmark(userId, tweetId);
   }
 
-  async removeBookmark(tweetId: string): Promise<BookmarkStatus> {
+  async removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
     const t = await this.ensureFreshToken();
-    return t.removeBookmark(tweetId);
+    return t.removeBookmark(userId, tweetId);
   }
 
   async getUserByUsername(username: string): Promise<FinchUserProfile> {

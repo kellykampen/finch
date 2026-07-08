@@ -501,12 +501,11 @@ describe("ByokTransport.listBookmarks", () => {
 });
 
 describe("ByokTransport.addBookmark", () => {
-  test("resolves the authenticated user id and bookmarks the tweet", async () => {
+  test("passes the userId and tweetId through and bookmarks the tweet", async () => {
     let capturedArgs: unknown[] = [];
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         createBookmark: async (...args: unknown[]) => {
           capturedArgs = args;
           return { data: { bookmarked: true } };
@@ -515,7 +514,7 @@ describe("ByokTransport.addBookmark", () => {
       unusedPostsClient,
     );
 
-    const result = await transport.addBookmark("999");
+    const result = await transport.addBookmark("42", "999");
 
     expect(result).toEqual({ bookmarked: true });
     expect(capturedArgs).toEqual(["42", { tweetId: "999" }]);
@@ -525,27 +524,25 @@ describe("ByokTransport.addBookmark", () => {
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         createBookmark: async () => ({ data: {} }),
       },
       unusedPostsClient,
     );
 
-    expect(await transport.addBookmark("999")).toEqual({ bookmarked: true });
+    expect(await transport.addBookmark("42", "999")).toEqual({ bookmarked: true });
   });
 
   test("throws CLIENT_ERROR when the API returns no data", async () => {
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         createBookmark: async () => ({ errors: [{ detail: "not found" }] }),
       },
       unusedPostsClient,
     );
 
     try {
-      await transport.addBookmark("999");
+      await transport.addBookmark("42", "999");
       throw new Error("expected addBookmark to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
@@ -557,7 +554,6 @@ describe("ByokTransport.addBookmark", () => {
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         createBookmark: async () => {
           throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
             title: "Client Forbidden",
@@ -572,7 +568,7 @@ describe("ByokTransport.addBookmark", () => {
     );
 
     try {
-      await transport.addBookmark("999");
+      await transport.addBookmark("42", "999");
       throw new Error("expected addBookmark to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
@@ -585,12 +581,11 @@ describe("ByokTransport.addBookmark", () => {
 });
 
 describe("ByokTransport.removeBookmark", () => {
-  test("resolves the authenticated user id and removes the bookmark", async () => {
+  test("passes the userId and tweetId through and removes the bookmark", async () => {
     let capturedArgs: unknown[] = [];
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         deleteBookmark: async (...args: unknown[]) => {
           capturedArgs = args;
           return { data: { bookmarked: false } };
@@ -599,7 +594,7 @@ describe("ByokTransport.removeBookmark", () => {
       unusedPostsClient,
     );
 
-    const result = await transport.removeBookmark("999");
+    const result = await transport.removeBookmark("42", "999");
 
     expect(result).toEqual({ bookmarked: false });
     expect(capturedArgs).toEqual(["42", "999"]);
@@ -609,27 +604,25 @@ describe("ByokTransport.removeBookmark", () => {
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         deleteBookmark: async () => ({ data: {} }),
       },
       unusedPostsClient,
     );
 
-    expect(await transport.removeBookmark("999")).toEqual({ bookmarked: false });
+    expect(await transport.removeBookmark("42", "999")).toEqual({ bookmarked: false });
   });
 
   test("throws CLIENT_ERROR when the API returns no data", async () => {
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         deleteBookmark: async () => ({ errors: [{ detail: "not found" }] }),
       },
       unusedPostsClient,
     );
 
     try {
-      await transport.removeBookmark("999");
+      await transport.removeBookmark("42", "999");
       throw new Error("expected removeBookmark to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
@@ -641,7 +634,6 @@ describe("ByokTransport.removeBookmark", () => {
     const transport = new ByokTransport(
       {
         ...unusedUsersClient,
-        getMe: async () => ({ data: { id: "42", username: "kelly", name: "Kelly" } }),
         deleteBookmark: async () => {
           throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
             errors: [{ message: "Missing required scopes: bookmark.write", code: 37 }],
@@ -652,7 +644,7 @@ describe("ByokTransport.removeBookmark", () => {
     );
 
     try {
-      await transport.removeBookmark("999");
+      await transport.removeBookmark("42", "999");
       throw new Error("expected removeBookmark to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);

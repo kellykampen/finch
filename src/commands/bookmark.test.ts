@@ -129,9 +129,12 @@ describe("runBookmarkList", () => {
 
 describe("runBookmarkAdd", () => {
   test("bookmarks a bare id", async () => {
+    let capturedUserId: string | undefined;
     let capturedTweetId: string | undefined;
     const transport = fakeTransport({
-      addBookmark: async (tweetId) => {
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      addBookmark: async (userId, tweetId) => {
+        capturedUserId = userId;
         capturedTweetId = tweetId;
         return { bookmarked: true };
       },
@@ -140,11 +143,13 @@ describe("runBookmarkAdd", () => {
     const result = await runBookmarkAdd(["999"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ bookmarked: true, tweet_id: "999" });
+    expect(capturedUserId).toBe("42");
     expect(capturedTweetId).toBe("999");
   });
 
   test("extracts the id from a status URL", async () => {
     const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
       addBookmark: async () => ({ bookmarked: true }),
     });
 
@@ -189,6 +194,7 @@ describe("runBookmarkAdd", () => {
 
   test("surfaces a missing bookmark.write scope as a clear AUTH_ERROR", async () => {
     const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
       addBookmark: async () => {
         throw new FinchError(
           "AUTH_ERROR",
@@ -203,9 +209,12 @@ describe("runBookmarkAdd", () => {
 
 describe("runBookmarkRemove", () => {
   test("removes a bookmark for a bare id", async () => {
+    let capturedUserId: string | undefined;
     let capturedTweetId: string | undefined;
     const transport = fakeTransport({
-      removeBookmark: async (tweetId) => {
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      removeBookmark: async (userId, tweetId) => {
+        capturedUserId = userId;
         capturedTweetId = tweetId;
         return { bookmarked: false };
       },
@@ -214,11 +223,13 @@ describe("runBookmarkRemove", () => {
     const result = await runBookmarkRemove(["999"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ bookmarked: false, tweet_id: "999" });
+    expect(capturedUserId).toBe("42");
     expect(capturedTweetId).toBe("999");
   });
 
   test("extracts the id from a status URL", async () => {
     const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
       removeBookmark: async () => ({ bookmarked: false }),
     });
 
