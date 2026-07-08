@@ -493,9 +493,13 @@ class RefreshingOAuth2Transport implements XTransport {
     }
     this.config.expiresAt = now + token.expires_in * 1000;
 
-    await (this.deps.persistFn
-      ? this.deps.persistFn(this.config)
-      : writeOAuth2Config({ auth: this.config, transport: "oauth2", defaults: { json: false, count: 10 } }));
+    if (this.deps.persistFn) {
+      await this.deps.persistFn(this.config);
+    } else {
+      const current = readOAuth2Config();
+      const defaults = current?.defaults ?? { json: false, count: 10 };
+      writeOAuth2Config({ auth: this.config, transport: "oauth2", defaults });
+    }
 
     this.cachedTransport = this.deps.buildTransportFn(this.config.accessToken);
     return this.cachedTransport;
