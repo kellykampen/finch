@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { validatePostText } from "../core/validation";
+import { extractTweetId } from "../core/ids";
 import { parseArgs } from "../core/args";
 import { planMediaUploads, uploadMedia } from "./post";
 
@@ -59,6 +60,9 @@ export async function runThread(
 
   numberedTexts.forEach(validatePostText);
 
+  let previousId: string | undefined =
+    values["--continue"] !== undefined ? extractTweetId(values["--continue"]) : undefined;
+
   if (dryRun) {
     return {
       data: {
@@ -68,14 +72,16 @@ export async function runThread(
           return { text, media: entry?.media ?? [], alt: entry?.alt ?? [] };
         }),
       },
-      human: `Would post a thread of ${numberedTexts.length} posts`,
+      human:
+        previousId !== undefined
+          ? `Would post a thread of ${numberedTexts.length} posts continuing from ${previousId}`
+          : `Would post a thread of ${numberedTexts.length} posts`,
     };
   }
 
   const transport = getTransport();
 
   const ids: string[] = [];
-  let previousId: string | undefined;
   let i = 0;
   for (const text of numberedTexts) {
     try {
@@ -107,7 +113,7 @@ export async function runThread(
 
 function parseThreadArgs(argv: string[]): ParsedThreadArgs {
   const { values, bools, positionals } = parseArgs(argv, {
-    valueFlags: ["--file", "--delimiter", "--media", "--alt"],
+    valueFlags: ["--file", "--delimiter", "--continue", "--media", "--alt"],
     boolFlags: ["--dry-run", "--number"],
   });
 

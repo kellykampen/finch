@@ -125,6 +125,19 @@ describe("runThread", () => {
     );
   });
 
+  test("throws USAGE_ERROR when both positional args and --file are given", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "from file\n");
+      await expect(
+        runThread(["positional text", "--file", path], { getTransport: () => fakeTransport({}) }),
+      ).rejects.toThrow(FinchError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("on partial failure, throws with what succeeded plus the failure in detail", async () => {
     let calls = 0;
     const transport = fakeTransport({
@@ -250,17 +263,69 @@ describe("runThread", () => {
     }
   });
 
-  test("throws USAGE_ERROR when both positional args and --file are given", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
-    try {
-      const path = join(dir, "thread.txt");
-      writeFileSync(path, "from file\n");
+  test("--continue with a bare id starts the thread as a reply to that id", async () => {
+    const replyToIds: Array<string | undefined> = [];
+    let counter = 0;
+    const transport = fakeTransport({
+      createTweet: async (text, replyToId) => {
+        replyToIds.push(replyToId);
+        counter += 1;
+        return { id: String(counter), text };
+      },
+    });
 
-      await expect(runThread(["from arg", "--file", path], { getTransport: () => fakeTransport({}) })).rejects.toThrow(
-        FinchError,
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+    const result = await runThread(["--continue", "12345", "first", "second"], {
+      getTransport: () => transport,
+    });
+
+    expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+    expect(replyToIds).toEqual(["12345", "1"]);
+  });
+
+  test("--continue with a URL resolves the id and starts the thread as a reply to it", async () => {
+    const replyToIds: Array<string | undefined> = [];
+    let counter = 0;
+    const transport = fakeTransport({
+      createTweet: async (text, replyToId) => {
+        replyToIds.push(replyToId);
+        counter += 1;
+        return { id: String(counter), text };
+      },
+    });
+
+    const result = await runThread(["--continue", "https://x.com/someone/status/67890", "first", "second", "third"], {
+      getTransport: () => transport,
+    });
+
+    expect(result.data).toEqual({ ids: ["1", "2", "3"], count: 3 });
+    expect(replyToIds).toEqual(["67890", "1", "2"]);
+  });
+
+  test("--dry-run with --continue notes the continuation target without calling transport", async () => {
+    const result = await runThread(["--continue", "11111", "first", "second", "--dry-run"], {
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: [
+        { text: "first", media: [], alt: [] },
+        { text: "second", media: [], alt: [] },
+      ],
+    });
+    expect(result.human).toContain("continuing from 11111");
+  });
+
+  test("invalid --continue value throws USAGE_ERROR", async () => {
+    try {
+      await runThread(["--continue", "not-a-url", "first"], { getTransport: () => fakeTransport({}) });
+      throw new Error("expected runThread to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("USAGE_ERROR");
     }
   });
 
