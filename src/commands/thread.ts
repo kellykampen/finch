@@ -20,11 +20,11 @@ export interface ThreadDeps {
 
 /**
  * `finch thread "<text1>" "<text2>" ...` (repeatable arg, or `--file` with
- * one post per line): posts a chain, each reply targeting the previous
- * call's id. No auto-rollback on partial failure — X has no
- * thread-delete-cascade — so a failure partway through throws a FinchError
- * whose `detail` carries `{ids, count, failure}` for what already succeeded,
- * letting the caller decide whether to retry from the failure point.
+ * posts split by blank lines / paragraphs): posts a chain, each reply
+ * targeting the previous call's id. No auto-rollback on partial failure —
+ * X has no thread-delete-cascade — so a failure partway through throws a
+ * FinchError whose `detail` carries `{ids, count, failure}` for what already
+ * succeeded, letting the caller decide whether to retry from the failure point.
  */
 export async function runThread(
   argv: string[],
@@ -33,7 +33,7 @@ export async function runThread(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { values, bools, positionals } = parseArgs(argv, {
-    valueFlags: ["--file"],
+    valueFlags: ["--file", "--delimiter"],
     boolFlags: ["--dry-run"],
   });
 
@@ -80,10 +80,13 @@ function resolveTexts(positionals: string[], values: Record<string, string>): st
     if (positionals.length > 0) {
       throw new FinchError("USAGE_ERROR", "finch thread: positional args and --file are mutually exclusive");
     }
-    return readFileSync(values["--file"], "utf8")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+    const raw = readFileSync(values["--file"], "utf8").replace(/\r\n/g, "\n");
+    const delimiter = values["--delimiter"];
+    const pieces = delimiter !== undefined ? raw.split(delimiter) : raw.split(/\n\s*\n+/);
+    return pieces.map((piece) => piece.trim()).filter((piece) => piece.length > 0);
+  }
+  if (values["--delimiter"] !== undefined) {
+    throw new FinchError("USAGE_ERROR", "finch thread: --delimiter requires --file");
   }
   return positionals;
 }
