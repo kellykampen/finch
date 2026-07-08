@@ -1,4 +1,7 @@
 import { describe, test, expect } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createTools } from "./tools";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
@@ -24,6 +27,9 @@ const EXPECTED_TOOL_NAMES = [
   "delete_tweet",
   "follow_user",
   "unfollow_user",
+  "article_draft",
+  "article_publish",
+  "article_post",
   "whoami",
 ];
 
@@ -384,5 +390,120 @@ describe("createTools", () => {
         { text: "0:something", media: [], alt: [] },
       ],
     });
+  });
+
+  test("article_draft creates a draft from markdown and maps cover as --cover", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-mcp-article-draft-test-"));
+    try {
+      const mdPath = join(dir, "article.md");
+      const coverPath = join(dir, "cover.png");
+      writeFileSync(mdPath, "# Draft\n\nVia MCP.\n");
+      writeFileSync(coverPath, "fake-image-data");
+
+      let createdWith: { title?: string; coverMediaId?: string } = {};
+      const transport = fakeTransport({
+        uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+        createArticleDraft: async (title, _contentState, coverMediaId) => {
+          createdWith = { title, coverMediaId };
+          return { id: "draft-mcp-1" };
+        },
+      });
+      const tools = createTools({ getTransport: () => transport });
+
+      const result = await toolByName(tools, "article_draft").handler({
+        title: "MCP Draft",
+        markdownPath: mdPath,
+        cover: coverPath,
+      });
+
+      expect(result.structuredContent).toEqual({ id: "draft-mcp-1" });
+      expect(createdWith.title).toBe("MCP Draft");
+      expect(createdWith.coverMediaId).toBe(`id-for-${coverPath}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("article_draft sends a title value that literally equals '--cover' as real title, not the flag", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-mcp-article-injection-test-"));
+    try {
+      const mdPath = join(dir, "article.md");
+      const coverPath = join(dir, "real-cover.png");
+      writeFileSync(mdPath, "# Article\n");
+      writeFileSync(coverPath, "fake-image-data");
+
+      let createdWith: { title?: string; coverMediaId?: string } = {};
+      const transport = fakeTransport({
+        uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+        createArticleDraft: async (title, _contentState, coverMediaId) => {
+          createdWith = { title, coverMediaId };
+          return { id: "draft-injection" };
+        },
+      });
+      const tools = createTools({ getTransport: () => transport });
+
+      const result = await toolByName(tools, "article_draft").handler({
+        title: "--cover",
+        markdownPath: mdPath,
+        cover: coverPath,
+      });
+
+      expect(result.structuredContent).toEqual({ id: "draft-injection" });
+      expect(createdWith.title).toBe("--cover");
+      expect(createdWith.coverMediaId).toBe(`id-for-${coverPath}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("article_publish publishes a draft and returns the post URL", async () => {
+    const transport = fakeTransport({
+      publishArticleDraft: async (draftId) => {
+        expect(draftId).toBe("draft-mcp-123");
+        return { post_id: "9876543210" };
+      },
+    });
+    const tools = createTools({ getTransport: () => transport });
+
+    const result = await toolByName(tools, "article_publish").handler({ draftId: "draft-mcp-123" });
+
+    expect(result.structuredContent).toEqual({
+      post_id: "9876543210",
+      url: "https://x.com/i/web/status/9876543210",
+    });
+  });
+
+  test("article_post drafts and publishes a markdown file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-mcp-article-post-test-"));
+    try {
+      const mdPath = join(dir, "article.md");
+      writeFileSync(mdPath, "# Published via MCP\n\nHello world.\n");
+
+      let createdWith: { title?: string } = {};
+      const transport = fakeTransport({
+        createArticleDraft: async (title, _contentState, _coverMediaId) => {
+          createdWith = { title };
+          return { id: "draft-mcp-post-1" };
+        },
+        publishArticleDraft: async (draftId) => {
+          expect(draftId).toBe("draft-mcp-post-1");
+          return { post_id: "1122334455" };
+        },
+      });
+      const tools = createTools({ getTransport: () => transport });
+
+      const result = await toolByName(tools, "article_post").handler({
+        markdownPath: mdPath,
+        title: "MCP Post",
+      });
+
+      expect(result.structuredContent).toEqual({
+        post_id: "1122334455",
+        url: "https://x.com/i/web/status/1122334455",
+      });
+      expect(createdWith.title).toBe("MCP Post");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
