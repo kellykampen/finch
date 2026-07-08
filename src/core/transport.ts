@@ -82,6 +82,7 @@ export interface XTransport {
   deleteTweet(id: string): Promise<DeleteStatus>;
   uploadImage(path: string): Promise<{ media_id: string }>;
   uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }>;
+  setMediaAltText(mediaId: string, altText: string): Promise<void>;
 }
 
 interface GetMeResult {
@@ -198,6 +199,9 @@ interface MediaClientLike {
     mediaId: string,
     options?: { command?: "STATUS" },
   ): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
+  createMetadata(options: {
+    body: Record<string, unknown>;
+  }): Promise<{ data?: Record<string, unknown>; errors?: unknown[] }>;
 }
 
 // Requested on every tweet-returning call so `author_id`/`created_at` are
@@ -590,6 +594,20 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "uploadVideo");
     }
   }
+
+  async setMediaAltText(mediaId: string, altText: string): Promise<void> {
+    try {
+      const res = await this.mediaClient.createMetadata({
+        body: { mediaId, altText: { text: altText } },
+      });
+      if (res.errors && res.errors.length > 0) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the media metadata", res.errors ?? null);
+      }
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "setMediaAltText");
+    }
+  }
 }
 
 const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
@@ -634,6 +652,9 @@ const missingMediaClient: MediaClientLike = {
     throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
   },
   getUploadStatus: async () => {
+    throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
+  },
+  createMetadata: async () => {
     throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
   },
 };
@@ -994,6 +1015,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }> {
     const t = await this.ensureFreshToken();
     return t.uploadVideo(path, onStatus);
+  }
+
+  async setMediaAltText(mediaId: string, altText: string): Promise<void> {
+    const t = await this.ensureFreshToken();
+    return t.setMediaAltText(mediaId, altText);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {

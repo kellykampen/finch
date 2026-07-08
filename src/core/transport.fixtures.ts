@@ -35,6 +35,7 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     deleteTweet: notImplemented("deleteTweet"),
     uploadImage: notImplemented("uploadImage"),
     uploadVideo: notImplemented("uploadVideo"),
+    setMediaAltText: notImplemented("setMediaAltText"),
     ...overrides,
   };
 }

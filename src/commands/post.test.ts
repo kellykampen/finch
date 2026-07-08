@@ -55,7 +55,7 @@ describe("runPost", () => {
 
     const result = await runPost(["hello", "--dry-run"], { getTransport: () => transport });
 
-    expect(result.data).toEqual({ dryRun: true, wouldSend: { text: "hello", media: [] } });
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { text: "hello", media: [], alt: [] } });
     expect(called).toBe(false);
   });
 
@@ -66,7 +66,7 @@ describe("runPost", () => {
       },
     });
 
-    expect(result.data).toEqual({ dryRun: true, wouldSend: { text: "hello", media: [] } });
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { text: "hello", media: [], alt: [] } });
   });
 
   test("throws AUTH_ERROR when Finch is not configured", async () => {
@@ -293,6 +293,124 @@ describe("runPost", () => {
     expect(createdWith.mediaIds).toEqual(["id-for-a.png", "id-for-b.png", "id-for-c.png", "id-for-d.png"]);
   });
 
+  test("--alt applies per-image alt text after matching image uploads", async () => {
+    const calls: string[] = [];
+    const transport = fakeTransport({
+      uploadImage: async (path) => {
+        calls.push(`upload:${path}`);
+        return { media_id: `id-for-${path}` };
+      },
+      setMediaAltText: async (mediaId, altText) => {
+        calls.push(`alt:${mediaId}:${altText}`);
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        calls.push(`tweet:${mediaIds?.join(",")}`);
+        return { id: "1", text };
+      },
+    });
+
+    const result = await runPost(
+      ["hello", "--media", "a.png", "--alt", "A description", "--media", "b.png", "--alt", "B description"],
+      { getTransport: () => transport },
+    );
+
+    expect(result.data).toEqual({ id: "1", text: "hello" });
+    expect(calls).toEqual([
+      "upload:a.png",
+      "upload:b.png",
+      "alt:id-for-a.png:A description",
+      "alt:id-for-b.png:B description",
+      "tweet:id-for-a.png,id-for-b.png",
+    ]);
+  });
+
+  test("--alt may be omitted for trailing images", async () => {
+    const altCalls: Array<{ mediaId: string; altText: string }> = [];
+    let createdWith: { text?: string; mediaIds?: string[] } = {};
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      setMediaAltText: async (mediaId, altText) => {
+        altCalls.push({ mediaId, altText });
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        createdWith = { text, mediaIds };
+        return { id: "1", text };
+      },
+    });
+
+    await runPost(["hello", "--media", "a.png", "--alt", "A description", "--media", "b.png"], {
+      getTransport: () => transport,
+    });
+
+    expect(altCalls).toEqual([{ mediaId: "id-for-a.png", altText: "A description" }]);
+    expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-a.png", "id-for-b.png"] });
+  });
+
+  test("--alt applies to the preceding --media when earlier images omit alt text", async () => {
+    const altCalls: Array<{ mediaId: string; altText: string }> = [];
+    let createdWith: { text?: string; mediaIds?: string[] } = {};
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      setMediaAltText: async (mediaId, altText) => {
+        altCalls.push({ mediaId, altText });
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        createdWith = { text, mediaIds };
+        return { id: "1", text };
+      },
+    });
+
+    await runPost(["hello", "--media", "a.png", "--media", "b.png", "--alt", "B's alt"], {
+      getTransport: () => transport,
+    });
+
+    expect(altCalls).toEqual([{ mediaId: "id-for-b.png", altText: "B's alt" }]);
+    expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-a.png", "id-for-b.png"] });
+  });
+
+  test("--alt may be omitted for all images", async () => {
+    let altCalled = false;
+    let createdWith: { text?: string; mediaIds?: string[] } = {};
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      setMediaAltText: async () => {
+        altCalled = true;
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        createdWith = { text, mediaIds };
+        return { id: "1", text };
+      },
+    });
+
+    await runPost(["hello", "--media", "a.png", "--media", "b.png"], { getTransport: () => transport });
+
+    expect(altCalled).toBe(false);
+    expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-a.png", "id-for-b.png"] });
+  });
+
+  test("more --alt values than images are rejected with a USAGE_ERROR", async () => {
+    const transport = fakeTransport({
+      uploadImage: async () => {
+        throw new Error("should not upload");
+      },
+    });
+
+    await expect(
+      runPost(["hello", "--media", "a.png", "--alt", "A description", "--alt", "extra"], {
+        getTransport: () => transport,
+      }),
+    ).rejects.toThrow(FinchError);
+    try {
+      await runPost(["hello", "--media", "a.png", "--alt", "A description", "--alt", "extra"], {
+        getTransport: () => transport,
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toBe("Too many alt texts: 2 for 1 image");
+    }
+  });
+
   test("more than 4 images are rejected with a USAGE_ERROR", async () => {
     const transport = fakeTransport({
       uploadImage: async () => ({ media_id: "x" }),
@@ -340,8 +458,27 @@ describe("runPost", () => {
       getTransport: () => transport,
     });
 
-    expect(result.data).toEqual({ dryRun: true, wouldSend: { text: "hello", media: ["a.png", "b.png"] } });
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: { text: "hello", media: ["a.png", "b.png"], alt: [undefined, undefined] },
+    });
     expect(uploaded).toBe(false);
+  });
+
+  test("--dry-run reports alt text aligned to media paths", async () => {
+    const result = await runPost(
+      ["hello", "--media", "a.png", "--alt", "A description", "--media", "b.png", "--dry-run"],
+      {
+        getTransport: () => {
+          throw new Error("should not be called");
+        },
+      },
+    );
+
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: { text: "hello", media: ["a.png", "b.png"], alt: ["A description", undefined] },
+    });
   });
 
   test("--media after the -- terminator is treated as literal text", async () => {

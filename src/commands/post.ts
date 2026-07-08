@@ -11,7 +11,7 @@ export interface PostResult {
 
 export interface PostDryRunResult {
   dryRun: true;
-  wouldSend: { text: string; media: string[] };
+  wouldSend: { text: string; media: string[]; alt: (string | undefined)[] };
 }
 
 export interface PostHelpResult {
@@ -31,6 +31,7 @@ Flags:
   --dry-run          Validate and show what would be posted without calling the X API
   --file <path>      Read post text from a file
   --media <path>     Attach images (up to 4) or one GIF/video; repeatable/comma-separated
+  --alt <text>       Alt text for the preceding --media image (repeatable)
   --help, -h         Show this help message
 
 Text may be supplied as a positional argument, via --file, or from stdin.
@@ -42,6 +43,8 @@ interface ParsedPostArgs {
   dryRun: boolean;
   file: string | undefined;
   media: string[];
+  alt: (string | undefined)[];
+  altCount: number;
   positionals: string[];
 }
 
@@ -58,7 +61,7 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
-    valueFlags: ["--file", "--media"],
+    valueFlags: ["--file", "--media", "--alt"],
     boolFlags: ["--help", "-h", "--dry-run"],
   });
 
@@ -67,33 +70,57 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
     throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
   }
 
+  const mediaWithAlt = collectMediaWithAlt(flagRegion);
+
   return {
     help: Boolean(bools["--help"] || bools["-h"]),
     dryRun: Boolean(bools["--dry-run"]),
     file: values["--file"],
-    media: collectMediaPaths(flagRegion),
+    media: mediaWithAlt.media,
+    alt: mediaWithAlt.alt,
+    altCount: mediaWithAlt.altCount,
     positionals: [...positionals, ...literalRegion],
   };
 }
 
-function collectMediaPaths(flagRegion: string[]): string[] {
-  const paths: string[] = [];
+function collectMediaWithAlt(flagRegion: string[]): { media: string[]; alt: (string | undefined)[]; altCount: number } {
+  const media: string[] = [];
+  const alt: (string | undefined)[] = [];
+  let currentMediaIndex: number | undefined;
+  let altCount = 0;
+
   for (let i = 0; i < flagRegion.length; i++) {
     if (flagRegion[i] === "--media") {
       const value = flagRegion[i + 1];
       if (value === undefined) {
         throw new FinchError("USAGE_ERROR", "Missing value for --media");
       }
-      paths.push(
-        ...value
-          .split(",")
-          .map((p) => p.trim())
-          .filter(Boolean),
-      );
+      const paths = value
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      for (const path of paths) {
+        media.push(path);
+        alt.push(undefined);
+        currentMediaIndex = media.length - 1;
+      }
+      i++;
+      continue;
+    }
+    if (flagRegion[i] === "--alt") {
+      const value = flagRegion[i + 1];
+      if (value === undefined) {
+        throw new FinchError("USAGE_ERROR", "Missing value for --alt");
+      }
+      altCount++;
+      if (currentMediaIndex !== undefined && alt[currentMediaIndex] === undefined) {
+        alt[currentMediaIndex] = value;
+      }
       i++;
     }
   }
-  return paths;
+
+  return { media, alt, altCount };
 }
 
 /**
@@ -110,7 +137,7 @@ export async function runPost(
   const readStdin = deps.readStdin ?? (() => Bun.stdin.text());
   const writeStatus = deps.writeStatus ?? ((message: string) => console.error(message));
 
-  const { help, dryRun, file, media, positionals } = parsePostArgs(argv);
+  const { help, dryRun, file, media, alt, altCount, positionals } = parsePostArgs(argv);
 
   if (help) {
     return { data: { help: true, text: POST_USAGE }, human: POST_USAGE };
@@ -126,15 +153,24 @@ export async function runPost(
     validatePostText(text);
   }
 
+  // planMediaUploads() (above) already enforces the up-to-4-images /
+  // 1-gif-or-video-per-post rules, so only the alt-count check is needed here.
+  if (altCount > media.length) {
+    throw new FinchError(
+      "USAGE_ERROR",
+      `Too many alt texts: ${altCount} for ${media.length} image${media.length === 1 ? "" : "s"}`,
+    );
+  }
+
   if (dryRun) {
     return {
-      data: { dryRun: true, wouldSend: { text, media } },
+      data: { dryRun: true, wouldSend: { text, media, alt } },
       human: `Would post: ${text}${media.length > 0 ? ` with media: ${media.join(", ")}` : ""}`,
     };
   }
 
   const transport = getTransport();
-  const mediaIds = await uploadMedia(transport, mediaPlan, writeStatus);
+  const mediaIds = await uploadMedia(transport, mediaPlan, alt, writeStatus);
   const created = await transport.createTweet(text, undefined, mediaIds);
   return { data: created, human: `Posted: ${created.id}` };
 }
@@ -186,6 +222,7 @@ function classifyMediaPath(path: string): MediaKind | undefined {
 async function uploadMedia(
   transport: XTransport,
   plan: PlannedMediaUpload,
+  altTexts: (string | undefined)[],
   writeStatus: (message: string) => void,
 ): Promise<string[] | undefined> {
   if (plan.paths.length === 0) return undefined;
@@ -193,12 +230,25 @@ async function uploadMedia(
     const result = await transport.uploadVideo(plan.paths[0] as string, writeStatus);
     return [result.media_id];
   }
-  return uploadImages(transport, plan.paths);
+  return uploadImages(transport, plan.paths, altTexts);
 }
 
-async function uploadImages(transport: XTransport, paths: string[]): Promise<string[]> {
-  const results = await Promise.all(paths.map((path) => transport.uploadImage(path)));
-  return results.map((r) => r.media_id);
+async function uploadImages(
+  transport: XTransport,
+  paths: string[],
+  altTexts: (string | undefined)[],
+): Promise<string[]> {
+  const results = await Promise.all(
+    paths.map(async (path, index) => {
+      const uploaded = await transport.uploadImage(path);
+      const alt = altTexts[index];
+      if (alt !== undefined) {
+        await transport.setMediaAltText(uploaded.media_id, alt);
+      }
+      return uploaded.media_id;
+    }),
+  );
+  return results;
 }
 
 async function resolveText(
