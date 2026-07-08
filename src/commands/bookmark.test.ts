@@ -121,6 +121,28 @@ describe("runBookmarkList", () => {
     expect(capturedCount).toBe(10);
   });
 
+  test("uses folder-scoped list when --folder is provided", async () => {
+    let capturedUserId: string | undefined;
+    let capturedFolderId: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      listBookmarksInFolder: async (userId, folderId) => {
+        capturedUserId = userId;
+        capturedFolderId = folderId;
+        return [post];
+      },
+    });
+
+    const result = await runBookmarkList(["--folder", "folder-123"], {
+      getTransport: () => transport,
+      getConfig: () => fakeConfig(10),
+    });
+
+    expect(result.data).toEqual({ posts: [post] });
+    expect(capturedUserId).toBe("42");
+    expect(capturedFolderId).toBe("folder-123");
+  });
+
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runBookmarkList([], {
@@ -210,6 +232,40 @@ describe("runBookmarkAdd", () => {
     });
 
     await expect(runBookmarkAdd(["999"], { getTransport: () => transport })).rejects.toThrow(FinchError);
+  });
+
+  test("adds a bookmark to a folder when --folder is provided", async () => {
+    let capturedUserId: string | undefined;
+    let capturedFolderId: string | undefined;
+    let capturedTweetId: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      addBookmarkToFolder: async (userId, folderId, tweetId) => {
+        capturedUserId = userId;
+        capturedFolderId = folderId;
+        capturedTweetId = tweetId;
+        return { bookmarked: true };
+      },
+    });
+
+    const result = await runBookmarkAdd(["999", "--folder", "folder-123"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ bookmarked: true, tweet_id: "999" });
+    expect(result.human).toBe("Bookmarked 999 in folder folder-123");
+    expect(capturedUserId).toBe("42");
+    expect(capturedFolderId).toBe("folder-123");
+    expect(capturedTweetId).toBe("999");
+  });
+
+  test("--dry-run reports folder target without calling the transport", async () => {
+    const result = await runBookmarkAdd(["999", "--folder", "folder-123", "--dry-run"], {
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999" } });
+    expect(result.human).toBe("Would bookmark 999 in folder folder-123");
   });
 });
 

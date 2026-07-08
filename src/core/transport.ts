@@ -72,6 +72,8 @@ export interface XTransport {
   removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
   listBookmarkFolders(userId: string): Promise<FinchBookmarkFolder[]>;
   createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder>;
+  listBookmarksInFolder(userId: string, folderId: string): Promise<FinchTweet[]>;
+  addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
   unlike(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -145,6 +147,7 @@ interface UsersClientLike {
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarks(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  getBookmarksByFolderId(id: string, folderId: string): Promise<ListResult<TweetLike>>;
   getBookmarkFolders(
     id: string,
     options?: {
@@ -400,6 +403,40 @@ export class ByokTransport implements XTransport {
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "createBookmarkFolder");
+    }
+  }
+
+  async listBookmarksInFolder(userId: string, folderId: string): Promise<FinchTweet[]> {
+    try {
+      const res = await this.usersClient.getBookmarksByFolderId(userId, folderId);
+      return (res.data ?? []).map(shapeTweet);
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "listBookmarksInFolder");
+    }
+  }
+
+  async addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus> {
+    if (!this.rawClient) {
+      throw new FinchError("CLIENT_ERROR", "X SDK client does not expose bookmark folder membership", null);
+    }
+
+    try {
+      const res = (await this.rawClient.request(
+        "POST",
+        `/2/users/${encodeURIComponent(userId)}/bookmarks/folders/${encodeURIComponent(folderId)}/bookmarks`,
+        {
+          body: JSON.stringify({ tweet_id: tweetId }),
+          security: [{ OAuth2UserToken: ["bookmark.write", "tweet.read", "users.read"] }],
+        },
+      )) as ItemResult<Record<string, unknown>>;
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the bookmark folder addition", res.errors ?? null);
+      }
+      return { bookmarked: (res.data.bookmarked as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "addBookmarkToFolder");
     }
   }
 
@@ -792,12 +829,18 @@ function mapSdkError(err: unknown, operation?: string): FinchError {
         return new FinchError("CLIENT_ERROR", "Your X API tier does not include search access.", err.data ?? null);
       }
       if (
-        (operation === "listBookmarkFolders" || operation === "createBookmarkFolder") &&
+        (operation === "listBookmarkFolders" ||
+          operation === "createBookmarkFolder" ||
+          operation === "listBookmarksInFolder" ||
+          operation === "addBookmarkToFolder") &&
         isBookmarkFoldersPremiumForbidden(err)
       ) {
         return new FinchError("CLIENT_ERROR", "Bookmark folders require X Premium.", err.data ?? null);
       }
-      if ((operation === "addBookmark" || operation === "removeBookmark") && isBookmarkWriteForbidden(err)) {
+      if (
+        (operation === "addBookmark" || operation === "removeBookmark" || operation === "addBookmarkToFolder") &&
+        isBookmarkWriteForbidden(err)
+      ) {
         return new FinchError(
           "AUTH_ERROR",
           "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
@@ -965,6 +1008,16 @@ class RefreshingOAuth2Transport implements XTransport {
   async createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder> {
     const t = await this.ensureFreshToken();
     return t.createBookmarkFolder(userId, name);
+  }
+
+  async listBookmarksInFolder(userId: string, folderId: string): Promise<FinchTweet[]> {
+    const t = await this.ensureFreshToken();
+    return t.listBookmarksInFolder(userId, folderId);
+  }
+
+  async addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus> {
+    const t = await this.ensureFreshToken();
+    return t.addBookmarkToFolder(userId, folderId, tweetId);
   }
 
   async getUserByUsername(username: string): Promise<FinchUserProfile> {
