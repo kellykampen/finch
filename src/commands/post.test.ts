@@ -99,6 +99,7 @@ describe("runPost", () => {
 
   test("--help prints usage and does not call the transport", async () => {
     let called = false;
+    let getTransportCalled = false;
     const transport = fakeTransport({
       createTweet: async () => {
         called = true;
@@ -106,15 +107,22 @@ describe("runPost", () => {
       },
     });
 
-    const result = await runPost(["--help"], { getTransport: () => transport });
+    const result = await runPost(["--help"], {
+      getTransport: () => {
+        getTransportCalled = true;
+        return transport;
+      },
+    });
 
     expect(result.data).toEqual({ help: true, text: expect.stringContaining("Usage: finch post") });
     expect(result.human).toContain("Usage: finch post");
     expect(called).toBe(false);
+    expect(getTransportCalled).toBe(false);
   });
 
   test("-h prints usage and does not call the transport", async () => {
     let called = false;
+    let getTransportCalled = false;
     const transport = fakeTransport({
       createTweet: async () => {
         called = true;
@@ -122,10 +130,16 @@ describe("runPost", () => {
       },
     });
 
-    const result = await runPost(["-h"], { getTransport: () => transport });
+    const result = await runPost(["-h"], {
+      getTransport: () => {
+        getTransportCalled = true;
+        return transport;
+      },
+    });
 
     expect(result.data).toEqual({ help: true, text: expect.stringContaining("Usage: finch post") });
     expect(called).toBe(false);
+    expect(getTransportCalled).toBe(false);
   });
 
   test("unknown flag is rejected instead of being posted as content", async () => {
