@@ -25,6 +25,7 @@ const ALL_COMMANDS = [
   "follow",
   "unfollow",
   "delete",
+  "article draft",
   "config get",
   "config set",
   "config path",

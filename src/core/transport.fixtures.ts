@@ -36,6 +36,7 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     uploadImage: notImplemented("uploadImage"),
     uploadVideo: notImplemented("uploadVideo"),
     setMediaAltText: notImplemented("setMediaAltText"),
+    createArticleDraft: notImplemented("createArticleDraft"),
     ...overrides,
   };
 }

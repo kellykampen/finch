@@ -1235,6 +1235,93 @@ describe("ByokTransport.createBookmarkFolder", () => {
   });
 });
 
+describe("ByokTransport.createArticleDraft", () => {
+  test("posts title and content_state through the underlying SDK client request", async () => {
+    let capturedRequest: unknown[] = [];
+    const rawClient = {
+      request: async (...args: unknown[]) => {
+        capturedRequest = args;
+        return { data: { id: "article-1" } };
+      },
+    };
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, client: rawClient } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    const contentState = { blocks: [], entities: {} };
+    const result = await transport.createArticleDraft("My Article", contentState);
+
+    expect(result).toEqual({ id: "article-1" });
+    expect(capturedRequest).toEqual([
+      "POST",
+      "/2/articles/draft",
+      {
+        body: JSON.stringify({ title: "My Article", content_state: contentState }),
+        security: [{ OAuth2UserToken: ["tweet.write"] }],
+      },
+    ]);
+  });
+
+  test("includes cover_media when a cover media id is provided", async () => {
+    let capturedRequest: unknown[] = [];
+    const rawClient = {
+      request: async (...args: unknown[]) => {
+        capturedRequest = args;
+        return { data: { id: "article-2" } };
+      },
+    };
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, client: rawClient } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    const contentState = { blocks: [], entities: {} };
+    await transport.createArticleDraft("Covered Article", contentState, "media-123");
+
+    const body = JSON.parse((capturedRequest[2] as { body: string }).body);
+    expect(body).toEqual({
+      title: "Covered Article",
+      content_state: contentState,
+      cover_media: { media_id: "media-123" },
+    });
+  });
+
+  test("throws CLIENT_ERROR when the API returns no article data", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        client: { request: async () => ({ errors: [{ detail: "invalid content_state" }] }) },
+      } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    try {
+      await transport.createArticleDraft("Bad Article", { blocks: [], entities: {} });
+      throw new Error("expected createArticleDraft to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+
+  test("throws CLIENT_ERROR when the underlying client is not available", async () => {
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, unusedMediaClient);
+
+    try {
+      await transport.createArticleDraft("No Client", { blocks: [], entities: {} });
+      throw new Error("expected createArticleDraft to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      expect((err as FinchError).message).toBe("X SDK client does not expose article draft creation");
+    }
+  });
+});
+
 describe("ByokTransport.getUserByUsername", () => {
   test("shapes the profile into the id/username/name/description/public_metrics contract", async () => {
     const transport = new ByokTransport(
