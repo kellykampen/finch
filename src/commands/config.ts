@@ -1,10 +1,11 @@
-import { readConfig, writeConfig, configPath, maskSecret, type FinchConfig } from "../core/config";
+import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
+import { configPath, maskSecret } from "../core/config";
 import { FinchError } from "../core/errors";
 import { parseArgs, resolveCount } from "../core/args";
 
 export interface ConfigDeps {
-  readConfig?: () => FinchConfig | null;
-  writeConfig?: (config: FinchConfig) => void;
+  readConfig?: () => FinchOAuth2Config | null;
+  writeConfig?: (config: FinchOAuth2Config) => void;
   configPath?: () => string;
 }
 
@@ -23,7 +24,7 @@ interface ConfigKeyDef {
 
 // The full set of dotted keys `finch config get`/`finch config set`
 // recognize — deliberately a flat, hand-authored map rather than reflecting
-// over FinchConfig's shape, so every readable/settable key is an explicit,
+// over FinchOAuth2Config's shape, so every readable/settable key is an explicit,
 // reviewable decision (PLAN.md: auth.* is never settable via `config set`,
 // only defaults.json/defaults.count are).
 // Object.create(null) rather than a plain object literal — a plain `{}`
@@ -32,10 +33,11 @@ interface ConfigKeyDef {
 // but shaped nothing like ConfigKeyDef) instead of undefined, bypassing the
 // "unknown key" check below and crashing when `.path` is destructured.
 const CONFIG_KEYS: Record<string, ConfigKeyDef> = Object.assign(Object.create(null), {
-  "auth.apiKey": { path: ["auth", "apiKey"], kind: "secret", settable: false },
-  "auth.apiKeySecret": { path: ["auth", "apiKeySecret"], kind: "secret", settable: false },
+  "auth.clientId": { path: ["auth", "clientId"], kind: "secret", settable: false },
   "auth.accessToken": { path: ["auth", "accessToken"], kind: "secret", settable: false },
-  "auth.accessTokenSecret": { path: ["auth", "accessTokenSecret"], kind: "secret", settable: false },
+  "auth.refreshToken": { path: ["auth", "refreshToken"], kind: "secret", settable: false },
+  "auth.expiresAt": { path: ["auth", "expiresAt"], kind: "string", settable: false },
+  "auth.scopes": { path: ["auth", "scopes"], kind: "string", settable: false },
   transport: { path: ["transport"], kind: "string", settable: false },
   "defaults.json": { path: ["defaults", "json"], kind: "boolean", settable: true },
   "defaults.count": { path: ["defaults", "count"], kind: "count", settable: true },
@@ -49,7 +51,7 @@ function lookupConfigKeyDef(key: string): ConfigKeyDef | undefined {
 // missing, so callers can report a clean FinchError instead of letting a
 // raw TypeError escape from `section[nested]` on a manually-edited or
 // partially-corrupt config file.
-function readRaw(config: FinchConfig, def: ConfigKeyDef): unknown {
+function readRaw(config: FinchOAuth2Config, def: ConfigKeyDef): unknown {
   const [top, nested] = def.path;
   const section = (config as unknown as Record<string, unknown>)[top];
   if (section === undefined || section === null) return undefined;
@@ -59,10 +61,11 @@ function readRaw(config: FinchConfig, def: ConfigKeyDef): unknown {
 
 function formatValue(def: ConfigKeyDef, raw: unknown): string {
   if (def.kind === "secret") return maskSecret(String(raw));
+  if (Array.isArray(raw)) return raw.join(",");
   return String(raw);
 }
 
-function getConfigValue(config: FinchConfig, key: string): ConfigKeyValue {
+function getConfigValue(config: FinchOAuth2Config, key: string): ConfigKeyValue {
   const def = lookupConfigKeyDef(key);
   if (!def) {
     throw new FinchError("USAGE_ERROR", `Unknown config key: ${key}`);
@@ -90,10 +93,10 @@ function parseSettableValue(def: ConfigKeyDef, key: string, raw: string): unknow
 }
 
 function setConfigValue(
-  config: FinchConfig,
+  config: FinchOAuth2Config,
   key: string,
   raw: string,
-): { config: FinchConfig; result: ConfigKeyValue } {
+): { config: FinchOAuth2Config; result: ConfigKeyValue } {
   if (key.startsWith("auth.")) {
     throw new FinchError("USAGE_ERROR", `${key} cannot be set via \`finch config set\` — run \`finch auth\` instead.`);
   }
@@ -111,7 +114,7 @@ function setConfigValue(
   if (nested === undefined) {
     throw new FinchError("USAGE_ERROR", `finch config set does not support key: ${key}`);
   }
-  const updated: FinchConfig = {
+  const updated: FinchOAuth2Config = {
     ...config,
     [top]: { ...((config as unknown as Record<string, unknown>)[top] as object), [nested]: parsed },
   };
@@ -123,7 +126,7 @@ export async function runConfigGet(
   argv: string[],
   deps: ConfigDeps = {},
 ): Promise<{ data: ConfigKeyValue; human: string }> {
-  const readConfigFn = deps.readConfig ?? readConfig;
+  const readConfigFn = deps.readConfig ?? readOAuth2Config;
 
   const { positionals } = parseArgs(argv);
   const key = positionals[0];
@@ -145,8 +148,8 @@ export async function runConfigSet(
   argv: string[],
   deps: ConfigDeps = {},
 ): Promise<{ data: ConfigKeyValue; human: string }> {
-  const readConfigFn = deps.readConfig ?? readConfig;
-  const writeConfigFn = deps.writeConfig ?? writeConfig;
+  const readConfigFn = deps.readConfig ?? readOAuth2Config;
+  const writeConfigFn = deps.writeConfig ?? writeOAuth2Config;
 
   const { positionals } = parseArgs(argv);
   const [key, value] = positionals;

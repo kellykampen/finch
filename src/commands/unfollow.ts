@@ -1,5 +1,4 @@
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport } from "../core/transport";
+import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { normalizeUsername } from "../core/ids";
 import { parseArgs } from "../core/args";
@@ -15,8 +14,7 @@ export interface UnfollowDryRunResult {
 }
 
 export interface UnfollowDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
 }
 
 /** `finch unfollow <username>`: unfollows a user (resolves username to id first, as `follow` does). */
@@ -24,8 +22,7 @@ export async function runUnfollow(
   argv: string[],
   deps: UnfollowDeps = {},
 ): Promise<{ data: UnfollowResult | UnfollowDryRunResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
   const usernameArg = positionals[0];
@@ -41,12 +38,7 @@ export async function runUnfollow(
     };
   }
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-
-  const transport = transportFactory(auth);
+  const transport = getTransport();
   const me = await transport.getMe();
   const target = await transport.getUserByUsername(username);
   await transport.unfollow(me.id, target.id);

@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport } from "../core/transport";
-import { FinchError } from "../core/errors";
+import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { validatePostText } from "../core/validation";
 import { parseArgs } from "../core/args";
 
@@ -16,8 +14,7 @@ export interface PostDryRunResult {
 }
 
 export interface PostDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
   readStdin?: () => Promise<string>;
 }
 
@@ -30,8 +27,7 @@ export async function runPost(
   argv: string[],
   deps: PostDeps = {},
 ): Promise<{ data: PostResult | PostDryRunResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const readStdin = deps.readStdin ?? (() => Bun.stdin.text());
 
   const { values, bools, positionals } = parseArgs(argv, {
@@ -49,12 +45,7 @@ export async function runPost(
     };
   }
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-
-  const transport = transportFactory(auth);
+  const transport = getTransport();
   const created = await transport.createTweet(text);
   return { data: created, human: `Posted: ${created.id}` };
 }

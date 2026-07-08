@@ -3,8 +3,6 @@ import { runUser } from "./user";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
-
 describe("runUser", () => {
   test("looks up a profile by username", async () => {
     const profile = {
@@ -16,10 +14,7 @@ describe("runUser", () => {
     };
     const transport = fakeTransport({ getUserByUsername: async () => profile });
 
-    const result = await runUser(["kelly"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runUser(["kelly"], { getTransport: () => transport });
 
     expect(result.data).toEqual(profile);
   });
@@ -33,23 +28,20 @@ describe("runUser", () => {
       },
     });
 
-    await runUser(["@kelly"], { resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    await runUser(["@kelly"], { getTransport: () => transport });
 
     expect(capturedUsername).toBe("kelly");
   });
 
   test("throws USAGE_ERROR when the username is missing", async () => {
-    await expect(
-      runUser([], { resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport({}) }),
-    ).rejects.toThrow(FinchError);
+    await expect(runUser([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runUser(["kelly"], {
-        resolveAuth: () => null,
-        transportFactory: () => {
-          throw new Error("should not be called");
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
       }),
     ).rejects.toThrow(FinchError);

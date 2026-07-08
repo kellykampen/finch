@@ -72,19 +72,17 @@ describe("readOAuth2Config", () => {
     }
   });
 
-  test("throws AUTH_ERROR with a clear message when the config is the old OAuth 1.0a shape", () => {
-    const oldOAuth1aConfig = {
+  test("throws AUTH_ERROR with a clear message when the config is a legacy OAuth 1.0a shape", () => {
+    const legacyConfig = {
       auth: {
         apiKey: "key123",
-        apiKeySecret: "secret123",
         accessToken: "token123",
-        accessTokenSecret: "tokensecret123",
       },
       transport: "byok",
       defaults: { json: false, count: 10 },
     };
     mkdirSync(dirname(configPath()), { recursive: true });
-    writeFileSync(configPath(), JSON.stringify(oldOAuth1aConfig, null, 2), {
+    writeFileSync(configPath(), JSON.stringify(legacyConfig, null, 2), {
       mode: 0o600,
     });
 

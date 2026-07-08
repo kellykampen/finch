@@ -1,5 +1,4 @@
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport } from "../core/transport";
+import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { normalizeUsername } from "../core/ids";
 import { parseArgs } from "../core/args";
@@ -15,8 +14,7 @@ export interface FollowDryRunResult {
 }
 
 export interface FollowDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
 }
 
 /**
@@ -30,8 +28,7 @@ export async function runFollow(
   argv: string[],
   deps: FollowDeps = {},
 ): Promise<{ data: FollowResult | FollowDryRunResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
   const usernameArg = positionals[0];
@@ -47,12 +44,7 @@ export async function runFollow(
     };
   }
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-
-  const transport = transportFactory(auth);
+  const transport = getTransport();
   const me = await transport.getMe();
   const target = await transport.getUserByUsername(username);
   await transport.follow(me.id, target.id);

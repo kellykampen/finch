@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
-import { configPath } from "./config";
+import { configPath, CONFIG_MODE, CONFIG_DIR_MODE } from "./config";
 import { FinchError } from "./errors";
 
 export interface OAuth2AuthConfig {
@@ -20,9 +20,6 @@ export interface FinchOAuth2Config {
   };
 }
 
-const CONFIG_MODE = 0o600;
-const CONFIG_DIR_MODE = 0o700;
-
 export function readOAuth2Config(): FinchOAuth2Config | null {
   const path = configPath();
   if (!existsSync(path)) return null;
@@ -36,7 +33,7 @@ export function readOAuth2Config(): FinchOAuth2Config | null {
   }
 
   const auth = (parsed as Record<string, unknown> | undefined)?.auth;
-  if (auth && typeof auth === "object" && ("apiKeySecret" in auth || "accessTokenSecret" in auth)) {
+  if (auth && typeof auth === "object" && "apiKey" in auth) {
     throw new FinchError("AUTH_ERROR", "Finch now uses OAuth 2.0 — run `finch auth`", null);
   }
 

@@ -5,7 +5,17 @@ import { fakeTransport } from "../core/transport.fixtures";
 import type { FinchOAuth2Config } from "../core/oauth2-config";
 import type { OAuth2Token } from "@xdevplatform/xdk";
 
-const enteredAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
+const fakeOAuth2Config: FinchOAuth2Config = {
+  auth: {
+    clientId: "client-id",
+    accessToken: "access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Date.now() + 10_000,
+    scopes: ["tweet.read"],
+  },
+  transport: "oauth2",
+  defaults: { json: false, count: 10 },
+};
 
 function fakeOAuth2Token(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
   return {
@@ -193,7 +203,7 @@ describe("runAuthStatus", () => {
   test("reports unconfigured without calling the transport", async () => {
     let transportCalled = false;
     const result = await runAuthStatus({
-      resolveAuth: () => null,
+      readOAuth2Config: () => null,
       transportFactory: () => {
         transportCalled = true;
         throw new Error("should not be called");
@@ -210,7 +220,7 @@ describe("runAuthStatus", () => {
     });
 
     const result = await runAuthStatus({
-      resolveAuth: () => enteredAuth,
+      readOAuth2Config: () => fakeOAuth2Config,
       transportFactory: () => transport,
     });
 
@@ -225,7 +235,7 @@ describe("runAuthStatus", () => {
     });
 
     const result = await runAuthStatus({
-      resolveAuth: () => enteredAuth,
+      readOAuth2Config: () => fakeOAuth2Config,
       transportFactory: () => transport,
     });
 
@@ -239,8 +249,8 @@ describe("runAuthStatus", () => {
       },
     });
 
-    await expect(runAuthStatus({ resolveAuth: () => enteredAuth, transportFactory: () => transport })).rejects.toThrow(
-      FinchError,
-    );
+    await expect(
+      runAuthStatus({ readOAuth2Config: () => fakeOAuth2Config, transportFactory: () => transport }),
+    ).rejects.toThrow(FinchError);
   });
 });

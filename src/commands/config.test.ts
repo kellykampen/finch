@@ -1,25 +1,26 @@
 import { describe, test, expect } from "bun:test";
 import { runConfigGet, runConfigSet, runConfigPath } from "./config";
 import { FinchError } from "../core/errors";
-import type { FinchConfig } from "../core/config";
+import type { FinchOAuth2Config } from "../core/oauth2-config";
 
 const sampleAuth = {
-  apiKey: "key123456",
-  apiKeySecret: "secret123456",
+  clientId: "client123456",
   accessToken: "token123456",
-  accessTokenSecret: "tokensecret123456",
+  refreshToken: "refresh123456",
+  expiresAt: 1_700_000_000_000,
+  scopes: ["tweet.read", "tweet.write"],
 };
 
-const sampleConfig: FinchConfig = {
+const sampleConfig: FinchOAuth2Config = {
   auth: sampleAuth,
-  transport: "byok",
+  transport: "oauth2",
   defaults: { json: false, count: 10 },
 };
 
 describe("runConfigGet", () => {
   test("prints a non-secret string value (transport)", async () => {
     const result = await runConfigGet(["transport"], { readConfig: () => sampleConfig });
-    expect(result.data).toEqual({ key: "transport", value: "byok" });
+    expect(result.data).toEqual({ key: "transport", value: "oauth2" });
   });
 
   test("prints a non-secret number value as a string (defaults.count)", async () => {
@@ -32,14 +33,24 @@ describe("runConfigGet", () => {
     expect(result.data).toEqual({ key: "defaults.json", value: "false" });
   });
 
-  test("masks auth.* fields to all-but-last-4 characters", async () => {
-    const result = await runConfigGet(["auth.apiKey"], { readConfig: () => sampleConfig });
-    expect(result.data).toEqual({ key: "auth.apiKey", value: "*****3456" });
-    expect((result.data as { value: string }).value).not.toContain("key123456");
+  test("prints a non-secret numeric auth value (auth.expiresAt)", async () => {
+    const result = await runConfigGet(["auth.expiresAt"], { readConfig: () => sampleConfig });
+    expect(result.data).toEqual({ key: "auth.expiresAt", value: String(sampleAuth.expiresAt) });
   });
 
-  test("masks every auth.* field, never the full plaintext", async () => {
-    for (const key of ["auth.apiKeySecret", "auth.accessToken", "auth.accessTokenSecret"]) {
+  test("prints a non-secret array auth value (auth.scopes)", async () => {
+    const result = await runConfigGet(["auth.scopes"], { readConfig: () => sampleConfig });
+    expect(result.data).toEqual({ key: "auth.scopes", value: sampleAuth.scopes.join(",") });
+  });
+
+  test("masks auth.* fields to all-but-last-4 characters", async () => {
+    const result = await runConfigGet(["auth.clientId"], { readConfig: () => sampleConfig });
+    expect(result.data).toEqual({ key: "auth.clientId", value: "********3456" });
+    expect((result.data as { value: string }).value).not.toContain("client123456");
+  });
+
+  test("masks every secret auth.* field, never the full plaintext", async () => {
+    for (const key of ["auth.clientId", "auth.accessToken", "auth.refreshToken"]) {
       const result = await runConfigGet([key], { readConfig: () => sampleConfig });
       const value = (result.data as { value: string }).value;
       expect(value).toMatch(/^\*+\w{4}$/);
@@ -50,10 +61,10 @@ describe("runConfigGet", () => {
     // runConfigGet is JSON-shape-agnostic (the CLI layer decides --json vs
     // human output) — masking must apply to the returned data either way,
     // since the human formatter reads the same `value` field.
-    const jsonResult = await runConfigGet(["auth.apiKey"], { readConfig: () => sampleConfig });
-    const humanResult = await runConfigGet(["auth.apiKey"], { readConfig: () => sampleConfig });
+    const jsonResult = await runConfigGet(["auth.clientId"], { readConfig: () => sampleConfig });
+    const humanResult = await runConfigGet(["auth.clientId"], { readConfig: () => sampleConfig });
     expect(jsonResult.data).toEqual(humanResult.data);
-    expect((jsonResult.data as { value: string }).value).toBe("*****3456");
+    expect((jsonResult.data as { value: string }).value).toBe("********3456");
   });
 
   test("throws USAGE_ERROR for an unknown key", async () => {
@@ -76,7 +87,7 @@ describe("runConfigGet", () => {
   });
 
   test("throws a clean FinchError (not a raw TypeError) when a top-level section is missing from a corrupt config", async () => {
-    const corrupt = { auth: sampleAuth, transport: "byok" } as unknown as FinchConfig;
+    const corrupt = { auth: sampleAuth, transport: "oauth2" } as unknown as FinchOAuth2Config;
     let thrown: unknown;
     try {
       await runConfigGet(["defaults.count"], { readConfig: () => corrupt });
@@ -111,7 +122,7 @@ describe("runConfigGet", () => {
 
 describe("runConfigSet", () => {
   test("sets defaults.count and writes the updated config", async () => {
-    const written: { config: FinchConfig | null } = { config: null };
+    const written: { config: FinchOAuth2Config | null } = { config: null };
     const result = await runConfigSet(["defaults.count", "25"], {
       readConfig: () => sampleConfig,
       writeConfig: (config) => {
@@ -124,7 +135,7 @@ describe("runConfigSet", () => {
   });
 
   test("sets defaults.json and writes the updated config", async () => {
-    const written: { config: FinchConfig | null } = { config: null };
+    const written: { config: FinchOAuth2Config | null } = { config: null };
     const result = await runConfigSet(["defaults.json", "true"], {
       readConfig: () => sampleConfig,
       writeConfig: (config) => {
@@ -139,7 +150,7 @@ describe("runConfigSet", () => {
   test("rejects setting any auth.* field with a clear USAGE_ERROR pointing at finch auth", async () => {
     let thrown: unknown;
     try {
-      await runConfigSet(["auth.apiKey", "newvalue"], {
+      await runConfigSet(["auth.clientId", "newvalue"], {
         readConfig: () => sampleConfig,
         writeConfig: () => {
           throw new Error("should not write");

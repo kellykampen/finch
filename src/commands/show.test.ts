@@ -3,7 +3,6 @@ import { runShow } from "./show";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
 const post = { id: "1", text: "hi", author_id: "42", created_at: "2026-01-01T00:00:00.000Z" };
 
 describe("runShow", () => {
@@ -16,10 +15,7 @@ describe("runShow", () => {
       },
     });
 
-    const result = await runShow(["1"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runShow(["1"], { getTransport: () => transport });
 
     expect(result.data).toEqual(post);
     expect(capturedId).toBe("1");
@@ -34,18 +30,13 @@ describe("runShow", () => {
       },
     });
 
-    await runShow(["https://x.com/user/status/1"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    await runShow(["https://x.com/user/status/1"], { getTransport: () => transport });
 
     expect(capturedId).toBe("1");
   });
 
   test("throws USAGE_ERROR when the id-or-url argument is missing", async () => {
-    await expect(
-      runShow([], { resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport({}) }),
-    ).rejects.toThrow(FinchError);
+    await expect(runShow([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
   test("propagates CLIENT_ERROR when the post isn't found", async () => {
@@ -55,8 +46,6 @@ describe("runShow", () => {
       },
     });
 
-    await expect(runShow(["999"], { resolveAuth: () => fakeAuth, transportFactory: () => transport })).rejects.toThrow(
-      FinchError,
-    );
+    await expect(runShow(["999"], { getTransport: () => transport })).rejects.toThrow(FinchError);
   });
 });

@@ -1,9 +1,8 @@
 import * as crypto from "node:crypto";
 import { OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
 import { createPromptSession } from "../core/prompt";
-import { resolveAuthConfig } from "../core/config";
-import { writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
-import { createByokTransport, createOAuth2Transport, type XTransport } from "../core/transport";
+import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
+import { createOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 
 export interface AuthResult {
@@ -224,8 +223,8 @@ export interface AuthStatusResult {
 }
 
 export interface AuthStatusDeps {
-  resolveAuth?: () => import("../core/config").FinchAuthConfig | null;
-  transportFactory?: (auth: import("../core/config").FinchAuthConfig) => XTransport;
+  readOAuth2Config?: () => FinchOAuth2Config | null;
+  transportFactory?: (accessToken: string) => XTransport;
 }
 
 /**
@@ -235,18 +234,18 @@ export interface AuthStatusDeps {
  * genuine failure to check (network, rate-limit) propagates as an error.
  */
 export async function runAuthStatus(deps: AuthStatusDeps = {}): Promise<{ data: AuthStatusResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const readConfig = deps.readOAuth2Config ?? readOAuth2Config;
+  const transportFactory = deps.transportFactory ?? createOAuth2Transport;
 
-  const auth = resolveAuth();
-  if (!auth) {
+  const config = readConfig();
+  if (!config) {
     return {
       data: { configured: false, valid: false, username: null },
       human: "Not configured. Run `finch auth`.",
     };
   }
 
-  const transport = transportFactory(auth);
+  const transport = transportFactory(config.auth.accessToken);
   try {
     const me = await transport.getMe();
     return {

@@ -17,7 +17,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   {
     name: "auth",
     description:
-      "Interactive wizard: prompts for the 4 OAuth1.0a credentials, validates them with a live call, writes ~/.finch/config at 0600.",
+      "Interactive wizard: runs the OAuth 2.0 PKCE browser flow, validates the token with a live call, and writes ~/.finch/config at 0600.",
     flags: ["--json"],
     positionals: [],
     endpoint: "SDK client.users.getMe() (validation only)",

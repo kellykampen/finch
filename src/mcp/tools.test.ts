@@ -1,8 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { createTools } from "./tools";
+import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
-
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
 
 const EXPECTED_TOOL_NAMES = [
   "post_tweet",
@@ -36,7 +35,7 @@ describe("createTools", () => {
 
   test("post_tweet wraps runPost and returns the same data shape as the CLI --json output", async () => {
     const transport = fakeTransport({ createTweet: async (text) => ({ id: "1", text }) });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     const result = await toolByName(tools, "post_tweet").handler({ text: "hello" });
 
@@ -47,8 +46,7 @@ describe("createTools", () => {
 
   test("post_tweet's dryRun input flows through to the underlying command's --dry-run path", async () => {
     const tools = createTools({
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => {
+      getTransport: () => {
         throw new Error("should not be called");
       },
     });
@@ -59,7 +57,11 @@ describe("createTools", () => {
   });
 
   test("a FinchError from the wrapped command surfaces as an MCP tool error with {code, message, detail}", async () => {
-    const tools = createTools({ resolveAuth: () => null });
+    const tools = createTools({
+      getTransport: () => {
+        throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+      },
+    });
 
     const result = await toolByName(tools, "post_tweet").handler({ text: "hello" });
 
@@ -72,7 +74,7 @@ describe("createTools", () => {
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
       like: async () => ({ liked: true }),
     });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     const result = await toolByName(tools, "like_tweet").handler({ idOrUrl: "999" });
 
@@ -91,7 +93,7 @@ describe("createTools", () => {
       }),
       follow: async () => ({ following: true }),
     });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     const result = await toolByName(tools, "follow_user").handler({ username: "someuser" });
 
@@ -107,7 +109,7 @@ describe("createTools", () => {
         return [];
       },
     });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     await toolByName(tools, "get_timeline").handler({ count: 5 });
 
@@ -116,7 +118,7 @@ describe("createTools", () => {
 
   test("post_tweet sends a text value that literally equals '--dry-run' as real text, not the flag", async () => {
     const transport = fakeTransport({ createTweet: async (text) => ({ id: "1", text }) });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     const result = await toolByName(tools, "post_tweet").handler({ text: "--dry-run" });
 
@@ -133,7 +135,7 @@ describe("createTools", () => {
         return { id, text };
       },
     });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     const result = await toolByName(tools, "post_thread").handler({ texts: ["--file", "second post"] });
 
@@ -150,7 +152,7 @@ describe("createTools", () => {
         return { liked: true };
       },
     });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     // "--dry-run" isn't a valid tweet id/URL, so a correctly-positional
     // "--dry-run" must fail extractTweetId's own validation (a distinct
@@ -171,7 +173,7 @@ describe("createTools", () => {
     const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
     });
-    const tools = createTools({ resolveAuth: () => fakeAuth, transportFactory: () => transport });
+    const tools = createTools({ getTransport: () => transport });
 
     const result = await toolByName(tools, "whoami").handler({});
 
