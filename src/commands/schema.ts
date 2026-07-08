@@ -59,8 +59,9 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   },
   {
     name: "thread",
-    description: "Post a chain: first call is post, each subsequent is a reply to the previous response's id.",
-    flags: ["--json", "--dry-run", "--file <path>"],
+    description:
+      "Post a chain: first call is post, each subsequent is a reply to the previous response's id. With --file, posts are split on blank lines (paragraphs); use --delimiter to split on a literal string instead.",
+    flags: ["--json", "--dry-run", "--file <path>", "--delimiter <string>"],
     positionals: ["<text1>", "<text2>", "..."],
     endpoint: "POST /2/tweets x N, chained",
     dataShape: "{ ids: string[], count: number }",
