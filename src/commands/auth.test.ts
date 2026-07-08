@@ -31,16 +31,19 @@ function fakeOAuth2Token(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
 function fakeOAuth2Client(
   overrides: {
     getAuthorizationUrl?: (state?: string) => Promise<string>;
-    exchangeCode?: (code: string) => Promise<OAuth2Token>;
+    exchangeCode?: (code: string, codeVerifier?: string) => Promise<OAuth2Token>;
+    setPkceParameters?: (codeVerifier: string, codeChallenge?: string) => Promise<void>;
   } = {},
 ): {
   getAuthorizationUrl(state?: string): Promise<string>;
   exchangeCode(code: string, codeVerifier?: string): Promise<OAuth2Token>;
+  setPkceParameters(codeVerifier: string, codeChallenge?: string): Promise<void>;
 } {
   return {
     getAuthorizationUrl:
       overrides.getAuthorizationUrl ?? (async (state) => `https://x.com/i/oauth2/authorize?state=${state}`),
     exchangeCode: overrides.exchangeCode ?? (async () => fakeOAuth2Token()),
+    setPkceParameters: overrides.setPkceParameters ?? (async () => {}),
   };
 }
 
@@ -113,6 +116,46 @@ describe("runAuth", () => {
       transport: "oauth2",
       defaults: { json: false, count: 10 },
     });
+  });
+
+  test("generates PKCE parameters, sets them before building the authorization URL, and passes the verifier on exchange", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+
+    let setParams = { verifier: "", challenge: "" };
+    let exchangeVerifier: string | undefined;
+    const events: string[] = [];
+
+    await runAuth({
+      clientId: "client-id",
+      deps: oauth2AuthDeps({
+        createOAuth2Client: () =>
+          fakeOAuth2Client({
+            setPkceParameters: async (verifier, challenge) => {
+              events.push("setPkceParameters");
+              setParams = { verifier, challenge: challenge ?? "" };
+            },
+            getAuthorizationUrl: async (state) => {
+              events.push("getAuthorizationUrl");
+              return `https://x.com/i/oauth2/authorize?state=${state}`;
+            },
+            exchangeCode: async (_code, verifier) => {
+              events.push("exchangeCode");
+              exchangeVerifier = verifier;
+              return fakeOAuth2Token();
+            },
+          }),
+        createTransport: () => transport,
+      }),
+    });
+
+    expect(events[0]).toBe("setPkceParameters");
+    expect(events[1]).toBe("getAuthorizationUrl");
+    expect(events[events.length - 1]).toBe("exchangeCode");
+    expect(setParams.verifier.length).toBeGreaterThan(0);
+    expect(setParams.challenge.length).toBeGreaterThan(0);
+    expect(exchangeVerifier).toBe(setParams.verifier);
   });
 
   test("falls back to FINCH_OAUTH2_CLIENT_ID env var when no flag is provided", async () => {
