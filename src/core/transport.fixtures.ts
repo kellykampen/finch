@@ -23,6 +23,8 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     listBookmarks: notImplemented("listBookmarks"),
     addBookmark: notImplemented("addBookmark"),
     removeBookmark: notImplemented("removeBookmark"),
+    listBookmarkFolders: notImplemented("listBookmarkFolders"),
+    createBookmarkFolder: notImplemented("createBookmarkFolder"),
     getUserByUsername: notImplemented("getUserByUsername"),
     like: notImplemented("like"),
     unlike: notImplemented("unlike"),

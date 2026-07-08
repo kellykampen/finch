@@ -9,8 +9,10 @@ const EXPECTED_TOOL_NAMES = [
   "post_thread",
   "get_timeline",
   "list_bookmarks",
+  "list_bookmark_folders",
   "add_bookmark",
   "remove_bookmark",
+  "create_bookmark_folder",
   "search_tweets",
   "get_user_posts",
   "get_user_profile",
@@ -118,6 +120,36 @@ describe("createTools", () => {
     await toolByName(tools, "get_timeline").handler({ count: 5 });
 
     expect(capturedCount).toBe(5);
+  });
+
+  test("list_bookmark_folders resolves the authenticated user id and reports {folders}", async () => {
+    const folders = [{ id: "111", name: "Work" }];
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+      listBookmarkFolders: async () => folders,
+    });
+    const tools = createTools({ getTransport: () => transport });
+
+    const result = await toolByName(tools, "list_bookmark_folders").handler({});
+
+    expect(result.structuredContent).toEqual({ folders });
+  });
+
+  test("create_bookmark_folder resolves the authenticated user id and reports {folder}", async () => {
+    let capturedName: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+      createBookmarkFolder: async (_userId, name) => {
+        capturedName = name;
+        return { id: "222", name };
+      },
+    });
+    const tools = createTools({ getTransport: () => transport });
+
+    const result = await toolByName(tools, "create_bookmark_folder").handler({ name: "Project notes" });
+
+    expect(result.structuredContent).toEqual({ folder: { id: "222", name: "Project notes" } });
+    expect(capturedName).toBe("Project notes");
   });
 
   test("post_tweet sends a text value that literally equals '--dry-run' as real text, not the flag", async () => {

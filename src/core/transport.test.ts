@@ -25,6 +25,9 @@ const unusedUsersClient = {
   getBookmarks: async () => {
     throw new Error("getBookmarks not stubbed for this test");
   },
+  getBookmarkFolders: async () => {
+    throw new Error("getBookmarkFolders not stubbed for this test");
+  },
   createBookmark: async () => {
     throw new Error("createBookmark not stubbed for this test");
   },
@@ -839,6 +842,186 @@ describe("ByokTransport.removeBookmark", () => {
       expect((err as FinchError).message).toBe(
         "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
       );
+    }
+  });
+});
+
+describe("ByokTransport.listBookmarkFolders", () => {
+  test("uses the SDK getBookmarkFolders method and shapes folder records", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarkFolders: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return {
+            data: [
+              { id: "111", name: "Work" },
+              { id: "222", name: "Read later", extra: "ignored" },
+              { id: 333, name: "bad id" },
+            ],
+          };
+        },
+      },
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    const result = await transport.listBookmarkFolders("42");
+
+    expect(result).toEqual([
+      { id: "111", name: "Work" },
+      { id: "222", name: "Read later" },
+    ]);
+    expect(capturedArgs).toEqual(["42"]);
+  });
+
+  test("maps a Premium-gated 403 to a clear CLIENT_ERROR", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarkFolders: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            detail: "Bookmark folders are only available to Premium subscribers.",
+          });
+        },
+      },
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    try {
+      await transport.listBookmarkFolders("42");
+      throw new Error("expected listBookmarkFolders to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      expect((err as FinchError).message).toBe("Bookmark folders require X Premium.");
+    }
+  });
+
+  test("does not misclassify an unrelated 403 as the Premium folder caveat", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarkFolders: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            detail: "Missing required scopes: bookmark.read",
+          });
+        },
+      },
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    try {
+      await transport.listBookmarkFolders("42");
+      throw new Error("expected listBookmarkFolders to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe("X rejected the provided credentials");
+    }
+  });
+});
+
+describe("ByokTransport.createBookmarkFolder", () => {
+  test("posts the folder name through the underlying SDK client request", async () => {
+    let capturedRequest: unknown[] = [];
+    const rawClient = {
+      request: async (...args: unknown[]) => {
+        capturedRequest = args;
+        return { data: { id: "333", name: "Project notes" } };
+      },
+    };
+    const transport = new ByokTransport(
+      { ...unusedUsersClient, client: rawClient } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    const result = await transport.createBookmarkFolder("42", "Project notes");
+
+    expect(result).toEqual({ id: "333", name: "Project notes" });
+    expect(capturedRequest).toEqual([
+      "POST",
+      "/2/users/42/bookmarks/folders",
+      {
+        body: JSON.stringify({ name: "Project notes" }),
+        security: [{ OAuth2UserToken: ["bookmark.write", "users.read"] }],
+      },
+    ]);
+  });
+
+  test("throws CLIENT_ERROR when create returns no folder data", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        client: { request: async () => ({ errors: [{ detail: "nope" }] }) },
+      } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    try {
+      await transport.createBookmarkFolder("42", "Project notes");
+      throw new Error("expected createBookmarkFolder to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+
+  test("maps a Premium-gated 403 to a clear CLIENT_ERROR", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        client: {
+          request: async () => {
+            throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+              reason: "premium_required",
+              detail: "Creating bookmark folders requires Premium.",
+            });
+          },
+        },
+      } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    try {
+      await transport.createBookmarkFolder("42", "Project notes");
+      throw new Error("expected createBookmarkFolder to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      expect((err as FinchError).message).toBe("Bookmark folders require X Premium.");
+    }
+  });
+
+  test("does not misclassify an unrelated 403 as the Premium folder caveat", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        client: {
+          request: async () => {
+            throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+              detail: "Missing required scopes: bookmark.write",
+            });
+          },
+        },
+      } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    try {
+      await transport.createBookmarkFolder("42", "Project notes");
+      throw new Error("expected createBookmarkFolder to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe("X rejected the provided credentials");
     }
   });
 });

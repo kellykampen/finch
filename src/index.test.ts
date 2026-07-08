@@ -61,6 +61,24 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(envelope.error.code).toBe("AUTH_ERROR");
   });
 
+  test("bookmark folders is dispatched as a real auth-backed command", () => {
+    const { exitCode, stdout } = runCli(["bookmark", "folders", "--json"]);
+
+    expect(exitCode).toBe(3);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("AUTH_ERROR");
+  });
+
+  test("bookmark folder new is dispatched as a real auth-backed command", () => {
+    const { exitCode, stdout } = runCli(["bookmark", "folder", "new", "Project notes", "--json"]);
+
+    expect(exitCode).toBe(3);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("AUTH_ERROR");
+  });
+
   test("auth status with no config/env exits 0 reporting unconfigured", () => {
     const { exitCode, stdout } = runCli(["auth", "status", "--json"]);
 

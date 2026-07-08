@@ -1,4 +1,4 @@
-import { resolveOAuth2Transport, type XTransport, type FinchTweet } from "../core/transport";
+import { resolveOAuth2Transport, type XTransport, type FinchTweet, type FinchBookmarkFolder } from "../core/transport";
 import { parseArgs, resolveCount } from "../core/args";
 import { formatPosts } from "../core/format";
 import { readOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
@@ -109,4 +109,51 @@ export async function runBookmarkRemove(
   const me = await transport.getMe();
   await transport.removeBookmark(me.id, tweetId);
   return { data: { bookmarked: false, tweet_id: tweetId }, human: `Removed bookmark ${tweetId}` };
+}
+
+export interface BookmarkFoldersDeps {
+  getTransport?: () => XTransport;
+}
+
+function formatBookmarkFolders(folders: FinchBookmarkFolder[]): string {
+  if (folders.length === 0) return "No bookmark folders found.";
+  return folders.map((folder) => `${folder.id}\t${folder.name}`).join("\n");
+}
+
+/** `finch bookmark folders`: list the authenticated user's bookmark folders. */
+export async function runBookmarkFolders(
+  _argv: string[],
+  deps: BookmarkFoldersDeps = {},
+): Promise<{ data: { folders: FinchBookmarkFolder[] }; human: string }> {
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
+
+  const transport = getTransport();
+  const me = await transport.getMe();
+  const folders = await transport.listBookmarkFolders(me.id);
+
+  return { data: { folders }, human: formatBookmarkFolders(folders) };
+}
+
+export interface BookmarkFolderNewDeps {
+  getTransport?: () => XTransport;
+}
+
+/** `finch bookmark folder new <name>`: create a bookmark folder. */
+export async function runBookmarkFolderNew(
+  argv: string[],
+  deps: BookmarkFolderNewDeps = {},
+): Promise<{ data: { folder: FinchBookmarkFolder }; human: string }> {
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
+
+  const { positionals } = parseArgs(argv);
+  const name = positionals[0];
+  if (!name) {
+    throw new FinchError("USAGE_ERROR", "finch bookmark folder new requires <name>");
+  }
+
+  const transport = getTransport();
+  const me = await transport.getMe();
+  const folder = await transport.createBookmarkFolder(me.id, name);
+
+  return { data: { folder }, human: `Created bookmark folder ${folder.id}\t${folder.name}` };
 }
