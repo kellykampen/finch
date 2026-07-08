@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { validatePostText } from "../core/validation";
+import { extractTweetId } from "../core/ids";
 import { parseArgs } from "../core/args";
 
 export interface ThreadResult {
@@ -33,7 +34,7 @@ export async function runThread(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { values, bools, positionals } = parseArgs(argv, {
-    valueFlags: ["--file", "--delimiter"],
+    valueFlags: ["--file", "--delimiter", "--continue"],
     boolFlags: ["--dry-run"],
   });
 
@@ -43,17 +44,22 @@ export async function runThread(
   }
   texts.forEach(validatePostText);
 
+  let previousId: string | undefined =
+    values["--continue"] !== undefined ? extractTweetId(values["--continue"]) : undefined;
+
   if (bools["--dry-run"]) {
     return {
       data: { dryRun: true, wouldSend: texts.map((text) => ({ text })) },
-      human: `Would post a thread of ${texts.length} posts`,
+      human:
+        previousId !== undefined
+          ? `Would post a thread of ${texts.length} posts continuing from ${previousId}`
+          : `Would post a thread of ${texts.length} posts`,
     };
   }
 
   const transport = getTransport();
 
   const ids: string[] = [];
-  let previousId: string | undefined;
   for (const text of texts) {
     try {
       const created = await transport.createTweet(text, previousId);
