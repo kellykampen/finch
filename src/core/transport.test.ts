@@ -1,8 +1,12 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ApiError, type OAuth2Token } from "@xdevplatform/xdk";
 import { ByokTransport, createRefreshingOAuth2Transport } from "./transport";
 import { FinchError } from "./errors";
 import { fakeTransport } from "./transport.fixtures";
+import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
 import type { OAuth2AuthConfig } from "./oauth2-config";
 
 const unusedUsersClient = {
@@ -731,6 +735,54 @@ describe("createRefreshingOAuth2Transport", () => {
       expect((err as FinchError).message).toBe("Your session has expired — run `finch auth` to log in again.");
     }
     expect(apiCallMade).toBe(false);
+  });
+
+  describe("default persist path", () => {
+    let fakeHome: string;
+    let originalHome: string | undefined;
+
+    beforeEach(() => {
+      fakeHome = mkdtempSync(join(tmpdir(), "finch-transport-test-"));
+      originalHome = process.env.HOME;
+      process.env.HOME = fakeHome;
+    });
+
+    afterEach(() => {
+      process.env.HOME = originalHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    });
+
+    test("preserves user-configured defaults when persisting after refresh", async () => {
+      const now = 2_000_000;
+      const authConfig = createOAuth2AuthConfig({ expiresAt: now });
+      writeOAuth2Config({
+        auth: authConfig,
+        transport: "oauth2",
+        defaults: { json: true, count: 50 },
+      });
+
+      const transport = createRefreshingOAuth2Transport(authConfig, {
+        nowFn: () => now,
+        refreshFn: async () =>
+          createRefreshToken({ access_token: "access-refreshed", refresh_token: "refresh-rotated" }),
+        buildTransportFn: () =>
+          fakeTransport({
+            getMe: async () => ({ id: "5", username: "defaults-saver", name: "Defaults Saver" }),
+          }),
+      });
+
+      await transport.getMe();
+
+      const persisted = readOAuth2Config();
+      expect(persisted?.defaults).toEqual({ json: true, count: 50 });
+      expect(persisted?.auth).toEqual({
+        clientId: "client-123",
+        accessToken: "access-refreshed",
+        refreshToken: "refresh-rotated",
+        expiresAt: now + 7200 * 1000,
+        scopes: ["tweet.read"],
+      });
+    });
   });
 
   test("reuses the cached transport on subsequent calls", async () => {
