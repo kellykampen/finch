@@ -18,7 +18,13 @@ import { runDelete } from "../commands/delete";
 import { runFollow } from "../commands/follow";
 import { runUnfollow } from "../commands/unfollow";
 import { runWhoami } from "../commands/whoami";
-import { runBookmarkList, runBookmarkAdd, runBookmarkRemove } from "../commands/bookmark";
+import {
+  runBookmarkList,
+  runBookmarkAdd,
+  runBookmarkRemove,
+  runBookmarkFolders,
+  runBookmarkFolderNew,
+} from "../commands/bookmark";
 
 export interface McpToolDeps {
   getTransport?: () => XTransport;
@@ -121,6 +127,12 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       handler: (args) => runTool(() => runBookmarkList(buildArgv([], { count: args.count as number }), deps)),
     },
     {
+      name: "list_bookmark_folders",
+      description: "List the authenticated user's bookmark folders (maps to `finch bookmark folders`).",
+      inputSchema: {},
+      handler: () => runTool(() => runBookmarkFolders(buildArgv([]), deps)),
+    },
+    {
       name: "add_bookmark",
       description: "Bookmark a post (maps to `finch bookmark add`).",
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
@@ -133,6 +145,12 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
         runTool(() => runBookmarkRemove(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
+    },
+    {
+      name: "create_bookmark_folder",
+      description: "Create a bookmark folder (maps to `finch bookmark folder new`).",
+      inputSchema: { name: z.string() },
+      handler: (args) => runTool(() => runBookmarkFolderNew(buildArgv([args.name as string]), deps)),
     },
     {
       name: "search_tweets",

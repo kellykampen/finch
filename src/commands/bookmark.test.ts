@@ -1,5 +1,11 @@
 import { describe, test, expect } from "bun:test";
-import { runBookmarkList, runBookmarkAdd, runBookmarkRemove } from "./bookmark";
+import {
+  runBookmarkList,
+  runBookmarkAdd,
+  runBookmarkRemove,
+  runBookmarkFolders,
+  runBookmarkFolderNew,
+} from "./bookmark";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import type { FinchOAuth2Config } from "../core/oauth2-config";
@@ -270,5 +276,66 @@ describe("runBookmarkRemove", () => {
         },
       }),
     ).rejects.toThrow(FinchError);
+  });
+});
+
+describe("runBookmarkFolders", () => {
+  test("resolves the authenticated user's id then fetches their bookmark folders", async () => {
+    let capturedUserId: string | undefined;
+    const folders = [
+      { id: "111", name: "Work" },
+      { id: "222", name: "Read later" },
+    ];
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      listBookmarkFolders: async (userId) => {
+        capturedUserId = userId;
+        return folders;
+      },
+    });
+
+    const result = await runBookmarkFolders([], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ folders });
+    expect(result.human).toBe("111\tWork\n222\tRead later");
+    expect(capturedUserId).toBe("42");
+  });
+
+  test("renders a helpful empty-state message", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      listBookmarkFolders: async () => [],
+    });
+
+    const result = await runBookmarkFolders([], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ folders: [] });
+    expect(result.human).toBe("No bookmark folders found.");
+  });
+});
+
+describe("runBookmarkFolderNew", () => {
+  test("creates a bookmark folder for the authenticated user", async () => {
+    let capturedUserId: string | undefined;
+    let capturedName: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      createBookmarkFolder: async (userId, name) => {
+        capturedUserId = userId;
+        capturedName = name;
+        return { id: "333", name };
+      },
+    });
+
+    const result = await runBookmarkFolderNew(["Project notes"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ folder: { id: "333", name: "Project notes" } });
+    expect(result.human).toBe("Created bookmark folder 333\tProject notes");
+    expect(capturedUserId).toBe("42");
+    expect(capturedName).toBe("Project notes");
+  });
+
+  test("throws USAGE_ERROR when the folder name is missing", async () => {
+    await expect(runBookmarkFolderNew([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 });
