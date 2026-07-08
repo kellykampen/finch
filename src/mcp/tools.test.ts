@@ -152,6 +152,45 @@ describe("createTools", () => {
     expect(capturedName).toBe("Project notes");
   });
 
+  test("list_bookmarks passes folderId through as the --folder flag", async () => {
+    let capturedFolderId: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+      listBookmarksInFolder: async (_userId, folderId, _maxResults) => {
+        capturedFolderId = folderId;
+        return [];
+      },
+    });
+    const tools = createTools({ getTransport: () => transport });
+
+    await toolByName(tools, "list_bookmarks").handler({ folderId: "folder-123" });
+
+    expect(capturedFolderId).toBe("folder-123");
+  });
+
+  test("add_bookmark passes folderId through as the --folder flag", async () => {
+    let capturedFolderId: string | undefined;
+    let capturedTweetId: string | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+      addBookmarkToFolder: async (_userId, folderId, tweetId) => {
+        capturedFolderId = folderId;
+        capturedTweetId = tweetId;
+        return { bookmarked: true, tweet_id: tweetId };
+      },
+    });
+    const tools = createTools({ getTransport: () => transport });
+
+    const result = await toolByName(tools, "add_bookmark").handler({
+      idOrUrl: "1234567890123456789",
+      folderId: "folder-456",
+    });
+
+    expect(result.structuredContent).toEqual({ bookmarked: true, tweet_id: "1234567890123456789" });
+    expect(capturedFolderId).toBe("folder-456");
+    expect(capturedTweetId).toBe("1234567890123456789");
+  });
+
   test("post_tweet sends a text value that literally equals '--dry-run' as real text, not the flag", async () => {
     const transport = fakeTransport({ createTweet: async (text) => ({ id: "1", text }) });
     const tools = createTools({ getTransport: () => transport });
