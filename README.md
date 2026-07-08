@@ -2,7 +2,7 @@
 
 A Twitter/X CLI built for humans **and** agents.
 
-Post, reply, thread, search, and engage on X from your terminal — or hand the same
+Post, reply, thread, search, engage, and delete on X from your terminal — or hand the same
 binary to an agent harness as a native MCP server. One implementation, two front doors.
 
 ## What it is
@@ -174,6 +174,12 @@ finch follow kellykampen
 finch unfollow kellykampen
 ```
 
+**Delete:**
+
+```bash
+finch delete 1234567890123456789
+```
+
 Every `<id-or-url>` argument accepts a bare post ID or a full `x.com`/`twitter.com`
 status URL; usernames accept an optional leading `@`.
 
@@ -201,7 +207,7 @@ terminal:
   | 6 | Network/timeout error reaching X |
 
 - **`--dry-run`** on every mutating command (`post`, `reply`, `thread`, `like`,
-  `unlike`, `repost`, `unrepost`, `follow`, `unfollow`) — validate and preview without
+  `unlike`, `repost`, `unrepost`, `follow`, `unfollow`, `delete`) — validate and preview without
   side effects.
 - **`finch schema`** (also `--describe`) — a single JSON document listing every
   command's flags, X API endpoint, and output shape, so a harness can discover
@@ -238,6 +244,7 @@ argument. Tool surface (name → CLI equivalent):
 | `get_tweet` | `finch show` |
 | `like_tweet` / `unlike_tweet` | `finch like` / `finch unlike` |
 | `repost_tweet` / `unrepost_tweet` | `finch repost` / `finch unrepost` |
+| `delete_tweet` | `finch delete` |
 | `follow_user` / `unfollow_user` | `finch follow` / `finch unfollow` |
 | `whoami` | `finch whoami` |
 
