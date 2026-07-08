@@ -1,7 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { ApiError } from "@xdevplatform/xdk";
-import { ByokTransport } from "./transport";
+import { ApiError, type OAuth2Token } from "@xdevplatform/xdk";
+import { ByokTransport, createRefreshingOAuth2Transport } from "./transport";
 import { FinchError } from "./errors";
+import { fakeTransport } from "./transport.fixtures";
+import type { OAuth2AuthConfig } from "./oauth2-config";
 
 const unusedUsersClient = {
   getMe: async () => {
@@ -576,5 +578,178 @@ describe("ByokTransport.unfollow", () => {
 
     expect(result).toEqual({ following: false });
     expect(capturedArgs).toEqual(["1", "42"]);
+  });
+});
+
+function createOAuth2AuthConfig(overrides: Partial<OAuth2AuthConfig> = {}): OAuth2AuthConfig {
+  return {
+    clientId: "client-123",
+    accessToken: "access-old",
+    refreshToken: "refresh-old",
+    expiresAt: 2_000_000,
+    scopes: ["tweet.read"],
+    ...overrides,
+  };
+}
+
+function createRefreshToken(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
+  return {
+    access_token: "access-new",
+    token_type: "Bearer",
+    expires_in: 7200,
+    refresh_token: "refresh-new",
+    scope: "tweet.read",
+    ...overrides,
+  };
+}
+
+describe("createRefreshingOAuth2Transport", () => {
+  test("does not refresh when the token is far from expiry", async () => {
+    const config = createOAuth2AuthConfig();
+    const calls = {
+      refreshCalled: false,
+      persistCalled: false,
+      builtWithAccessToken: null as string | null,
+    };
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => 1_000,
+      refreshFn: async () => {
+        calls.refreshCalled = true;
+        return createRefreshToken();
+      },
+      persistFn: () => {
+        calls.persistCalled = true;
+      },
+      buildTransportFn: (accessToken) => {
+        calls.builtWithAccessToken = accessToken;
+        return fakeTransport({
+          getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+        });
+      },
+    });
+
+    const me = await transport.getMe();
+
+    expect(me).toEqual({ id: "1", username: "kelly", name: "Kelly" });
+    expect(calls.refreshCalled).toBe(false);
+    expect(calls.persistCalled).toBe(false);
+    expect(calls.builtWithAccessToken).toEqual("access-old");
+  });
+
+  test("refreshes an expired token, uses the new token, and persists the updated config", async () => {
+    const config = createOAuth2AuthConfig({ expiresAt: 2_000_000 });
+    const now = 2_000_000;
+    const calls = {
+      builtWithAccessToken: null as string | null,
+      persistedConfig: null as OAuth2AuthConfig | null,
+    };
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => now,
+      refreshFn: async (clientId, refreshToken) => {
+        expect(clientId).toBe("client-123");
+        expect(refreshToken).toBe("refresh-old");
+        return createRefreshToken({ access_token: "access-refreshed", refresh_token: "refresh-rotated" });
+      },
+      persistFn: (updatedConfig) => {
+        calls.persistedConfig = updatedConfig;
+      },
+      buildTransportFn: (accessToken) => {
+        calls.builtWithAccessToken = accessToken;
+        return fakeTransport({
+          getMe: async () => ({ id: "2", username: "refreshed", name: "Refreshed" }),
+        });
+      },
+    });
+
+    const me = await transport.getMe();
+
+    expect(me).toEqual({ id: "2", username: "refreshed", name: "Refreshed" });
+    expect(calls.builtWithAccessToken).toEqual("access-refreshed");
+    expect(calls.persistedConfig).toEqual({
+      clientId: "client-123",
+      accessToken: "access-refreshed",
+      refreshToken: "refresh-rotated",
+      expiresAt: now + 7200 * 1000,
+      scopes: ["tweet.read"],
+    });
+  });
+
+  test("preserves the old refresh token when the refresh response omits one", async () => {
+    const config = createOAuth2AuthConfig();
+    const now = config.expiresAt;
+    const calls = { persistedConfig: null as OAuth2AuthConfig | null };
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => now,
+      refreshFn: async () => createRefreshToken({ access_token: "access-refreshed", refresh_token: undefined }),
+      persistFn: (updatedConfig) => {
+        calls.persistedConfig = updatedConfig;
+      },
+      buildTransportFn: (_accessToken) =>
+        fakeTransport({
+          getMe: async () => ({ id: "3", username: "same-refresh", name: "Same Refresh" }),
+        }),
+    });
+
+    await transport.getMe();
+
+    expect(calls.persistedConfig).toEqual({
+      clientId: "client-123",
+      accessToken: "access-refreshed",
+      refreshToken: "refresh-old",
+      expiresAt: now + 7200 * 1000,
+      scopes: ["tweet.read"],
+    });
+  });
+
+  test("throws a clean AUTH_ERROR when the refresh call fails", async () => {
+    const config = createOAuth2AuthConfig();
+    let apiCallMade = false;
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => config.expiresAt,
+      refreshFn: async () => {
+        throw new ApiError("Unauthorized", 401, "Unauthorized", new Headers(), null);
+      },
+      buildTransportFn: () =>
+        fakeTransport({
+          getMe: async () => {
+            apiCallMade = true;
+            return { id: "1", username: "x", name: "X" };
+          },
+        }),
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe("Your session has expired — run `finch auth` to log in again.");
+    }
+    expect(apiCallMade).toBe(false);
+  });
+
+  test("reuses the cached transport on subsequent calls", async () => {
+    const config = createOAuth2AuthConfig();
+    let buildCount = 0;
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => 1_000,
+      buildTransportFn: (accessToken) => {
+        buildCount++;
+        return fakeTransport({
+          getMe: async () => ({ id: String(buildCount), username: accessToken, name: "Name" }),
+        });
+      },
+    });
+
+    await transport.getMe();
+    await transport.getMe();
+
+    expect(buildCount).toBe(1);
   });
 });

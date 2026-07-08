@@ -1,6 +1,8 @@
-import { Client, OAuth1, ApiError } from "@xdevplatform/xdk";
+import { Client, OAuth1, ApiError, OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
 import type { FinchAuthConfig } from "./config";
 import { FinchError } from "./errors";
+import { writeOAuth2Config } from "./oauth2-config";
+import type { OAuth2AuthConfig } from "./oauth2-config";
 
 export interface FinchUser {
   id: string;
@@ -389,4 +391,151 @@ export function createByokTransport(auth: FinchAuthConfig): XTransport {
 export function createOAuth2Transport(accessToken: string): XTransport {
   const client = new Client({ accessToken });
   return new ByokTransport(client.users as unknown as UsersClientLike, client.posts as unknown as PostsClientLike);
+}
+
+// Same redirect URI used by `finch auth`; duplicated here to avoid a circular
+// dependency between transport.ts and commands/auth.ts.
+const OAUTH2_REDIRECT_URI = "http://127.0.0.1:8765/callback";
+
+export interface RefreshingOAuth2TransportDeps {
+  refreshFn?: (clientId: string, refreshToken: string) => Promise<OAuth2Token>;
+  persistFn?: (config: OAuth2AuthConfig) => void | Promise<void>;
+  buildTransportFn?: (accessToken: string) => XTransport;
+  nowFn?: () => number;
+}
+
+class RefreshingOAuth2Transport implements XTransport {
+  private cachedTransport: XTransport | undefined;
+  private refreshLock: Promise<XTransport> | null = null;
+
+  constructor(
+    private readonly config: OAuth2AuthConfig,
+    private readonly deps: Required<Pick<RefreshingOAuth2TransportDeps, "buildTransportFn" | "nowFn">> &
+      RefreshingOAuth2TransportDeps,
+  ) {}
+
+  async getMe(): Promise<FinchUser> {
+    const t = await this.ensureFreshToken();
+    return t.getMe();
+  }
+
+  async createTweet(text: string, replyToId?: string): Promise<CreatedTweet> {
+    const t = await this.ensureFreshToken();
+    return t.createTweet(text, replyToId);
+  }
+
+  async getTweet(id: string): Promise<FinchTweet> {
+    const t = await this.ensureFreshToken();
+    return t.getTweet(id);
+  }
+
+  async searchRecent(query: string, maxResults: number): Promise<FinchTweet[]> {
+    const t = await this.ensureFreshToken();
+    return t.searchRecent(query, maxResults);
+  }
+
+  async userTweets(userId: string, maxResults: number): Promise<FinchTweet[]> {
+    const t = await this.ensureFreshToken();
+    return t.userTweets(userId, maxResults);
+  }
+
+  async homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]> {
+    const t = await this.ensureFreshToken();
+    return t.homeTimeline(userId, maxResults);
+  }
+
+  async getUserByUsername(username: string): Promise<FinchUserProfile> {
+    const t = await this.ensureFreshToken();
+    return t.getUserByUsername(username);
+  }
+
+  async like(userId: string, tweetId: string): Promise<LikeStatus> {
+    const t = await this.ensureFreshToken();
+    return t.like(userId, tweetId);
+  }
+
+  async unlike(userId: string, tweetId: string): Promise<LikeStatus> {
+    const t = await this.ensureFreshToken();
+    return t.unlike(userId, tweetId);
+  }
+
+  async retweet(userId: string, tweetId: string): Promise<RepostStatus> {
+    const t = await this.ensureFreshToken();
+    return t.retweet(userId, tweetId);
+  }
+
+  async unretweet(userId: string, tweetId: string): Promise<RepostStatus> {
+    const t = await this.ensureFreshToken();
+    return t.unretweet(userId, tweetId);
+  }
+
+  async follow(userId: string, targetUserId: string): Promise<FollowStatus> {
+    const t = await this.ensureFreshToken();
+    return t.follow(userId, targetUserId);
+  }
+
+  async unfollow(userId: string, targetUserId: string): Promise<FollowStatus> {
+    const t = await this.ensureFreshToken();
+    return t.unfollow(userId, targetUserId);
+  }
+
+  private async ensureFreshToken(): Promise<XTransport> {
+    const now = this.deps.nowFn();
+    if (now < this.config.expiresAt - 60_000) {
+      if (!this.cachedTransport) {
+        this.cachedTransport = this.deps.buildTransportFn(this.config.accessToken);
+      }
+      return this.cachedTransport;
+    }
+
+    if (this.refreshLock) {
+      return await this.refreshLock;
+    }
+
+    this.refreshLock = this.performRefresh();
+    try {
+      return await this.refreshLock;
+    } finally {
+      this.refreshLock = null;
+    }
+  }
+
+  private async performRefresh(): Promise<XTransport> {
+    let token: OAuth2Token;
+    try {
+      token = await (this.deps.refreshFn
+        ? this.deps.refreshFn(this.config.clientId, this.config.refreshToken)
+        : new OAuth2({ clientId: this.config.clientId, redirectUri: OAUTH2_REDIRECT_URI }).refreshToken(
+            this.config.refreshToken,
+          ));
+    } catch {
+      throw new FinchError("AUTH_ERROR", "Your session has expired — run `finch auth` to log in again.", null);
+    }
+
+    const now = this.deps.nowFn();
+    this.config.accessToken = token.access_token;
+    if (token.refresh_token) {
+      this.config.refreshToken = token.refresh_token;
+    }
+    this.config.expiresAt = now + token.expires_in * 1000;
+
+    await (this.deps.persistFn
+      ? this.deps.persistFn(this.config)
+      : writeOAuth2Config({ auth: this.config, transport: "oauth2", defaults: { json: false, count: 10 } }));
+
+    this.cachedTransport = this.deps.buildTransportFn(this.config.accessToken);
+    return this.cachedTransport;
+  }
+}
+
+export function createRefreshingOAuth2Transport(
+  config: OAuth2AuthConfig,
+  deps?: RefreshingOAuth2TransportDeps,
+): XTransport {
+  return new RefreshingOAuth2Transport(config, {
+    refreshFn: deps?.refreshFn,
+    persistFn: deps?.persistFn,
+    buildTransportFn: deps?.buildTransportFn ?? createOAuth2Transport,
+    nowFn: deps?.nowFn ?? Date.now,
+  });
 }
