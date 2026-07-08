@@ -266,6 +266,47 @@ describe("createTools", () => {
     });
   });
 
+  test("post_tweet sends media path and alt values that literally equal flags as real values, not flags", async () => {
+    const tools = createTools({
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await toolByName(tools, "post_tweet").handler({
+      text: "hello",
+      dryRun: true,
+      media: [{ path: "--dry-run", alt: "--media" }],
+    });
+
+    expect(result.structuredContent).toEqual({
+      dryRun: true,
+      wouldSend: { text: "hello", media: ["--dry-run"], alt: ["--media"] },
+    });
+  });
+
+  test("post_thread sends per-tweet media path and alt values that literally equal flags as real values, not flags", async () => {
+    const tools = createTools({
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await toolByName(tools, "post_thread").handler({
+      texts: ["first tweet", "second tweet"],
+      dryRun: true,
+      media: [{ tweetIndex: 1, path: "--dry-run", alt: "--media" }],
+    });
+
+    expect(result.structuredContent).toEqual({
+      dryRun: true,
+      wouldSend: [
+        { text: "first tweet", media: [], alt: [] },
+        { text: "second tweet", media: ["--dry-run"], alt: ["--media"] },
+      ],
+    });
+  });
+
   test("post_tweet sends a text value that literally equals '--media' as real text, not the flag", async () => {
     const tools = createTools({
       getTransport: () => {

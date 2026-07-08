@@ -147,7 +147,6 @@ export async function runPost(
     return { data: { help: true, text: POST_USAGE }, human: POST_USAGE };
   }
 
-  const mediaPlan = planMediaUploads(media);
   const text = await resolveText(positionals, file, media.length > 0, readStdin);
 
   if (text.length === 0 && media.length === 0) {
@@ -157,8 +156,6 @@ export async function runPost(
     validatePostText(text);
   }
 
-  // planMediaUploads() (above) already enforces the up-to-4-images /
-  // 1-gif-or-video-per-post rules, so only the alt-count check is needed here.
   if (altCount > media.length) {
     throw new FinchError(
       "USAGE_ERROR",
@@ -173,6 +170,7 @@ export async function runPost(
     };
   }
 
+  const mediaPlan = planMediaUploads(media);
   const transport = getTransport();
   const mediaIds = await uploadMedia(transport, mediaPlan, alt, writeStatus);
   const created = await transport.createTweet(text, undefined, mediaIds);
