@@ -124,24 +124,75 @@ run `finch auth` again. There is no automatic migration — you must re-authenti
 
 Every command below works as-is; add `--json` to any of them for machine output.
 
-**Post, reply, thread:**
+**Post, reply:**
 
 ```bash
 finch post "shipping a CLI today"
 finch reply 1234567890123456789 "same"
 finch reply https://x.com/user/status/1234567890123456789 "same, via URL"
-finch thread "first post" "second post" "third post"
 ```
 
-`finch post` also accepts text via `--file <path>` or stdin if you omit the argument.
-`finch thread` takes one `--file` with a post per line as an alternative to repeated
-args. Every mutating command supports `--dry-run`, which validates and reports what
-would be sent without calling the API:
+`finch post` and `finch reply` also accept text via `--file <path>` or stdin if you
+omit the text argument. Every mutating command supports `--dry-run`, which validates
+and reports what would be sent without calling the API:
 
 ```bash
 finch post "test post" --dry-run --json
 # {"ok":true,"data":{"dryRun":true,"wouldSend":{"text":"test post"}}}
 ```
+
+**Media:**
+
+Attach images, a single GIF, or a single video to a post:
+
+```bash
+finch post "sunset" --media ./photo.jpg
+finch post "before / after" --media ./a.jpg --media ./b.jpg --alt "version A" --alt "version B"
+finch post "reaction" --media ./lol.gif
+```
+
+- Up to four still images per post, or one GIF, or one video — do not mix images
+  with GIF/video in the same post.
+- `--alt <text>` is repeatable and lines up with each image in order (ignored for
+  GIF/video).
+- Media paths may also be comma-separated in a single `--media` value.
+
+**Thread:**
+
+```bash
+finch thread "first post" "second post" "third post"
+finch thread --file thread.txt
+finch thread --file thread.txt --delimiter "---"
+finch thread --file continuation.txt --continue 1234567890123456789
+finch thread --file numbered.txt --number
+```
+
+`finch thread` posts a chain where each post replies to the previous one.
+- `--file <path>` reads posts separated by blank lines (paragraphs).
+- `--delimiter <string>` splits the file on a custom literal string instead of blank
+  lines.
+- `--number` prefixes each post with `i/n` (`1/3`, `2/3`, ...).
+- `--continue <id-or-url>` appends the thread to an existing post instead of starting
+  a new top-level post.
+- Per-tweet media: `--media <n>:<path>` and `--alt <n>:<text>`, where `<n>` is the
+  0-based index of the target tweet in the thread.
+
+**Articles:**
+
+Articles are written as Markdown and converted to X's `content_state` format.
+
+```bash
+# create a draft, then publish it separately
+finch article draft "My Article" ./article.md --cover ./hero.jpg
+finch article publish 1234567890123456789
+
+# or create and publish in one step
+finch article post ./article.md --title "My Article" --cover ./hero.jpg
+```
+
+- `article draft` returns `{ id }`; use that id with `article publish`.
+- `article post` returns `{ post_id, url }` for the published article.
+- `--cover <path>` is optional.
 
 **Read:**
 
@@ -224,8 +275,8 @@ terminal:
   | 6 | Network/timeout error reaching X |
 
 - **`--dry-run`** on every mutating command (`post`, `reply`, `thread`, `like`,
-  `unlike`, `repost`, `unrepost`, `follow`, `unfollow`, `delete`) — validate and preview without
-  side effects.
+  `unlike`, `repost`, `unrepost`, `follow`, `unfollow`, `delete`, `bookmark add`,
+  `bookmark rm`) — validate and preview without side effects.
 - **`finch schema`** (also `--describe`) — a single JSON document listing every
   command's flags, X API endpoint, and output shape, so a harness can discover
   Finch's full surface without parsing `--help` text:
@@ -251,9 +302,12 @@ argument. Tool surface (name → CLI equivalent):
 
 | MCP tool | CLI command |
 |---|---|
-| `post_tweet` | `finch post` |
+| `post_tweet` | `finch post` (accepts `media`/`alt` params) |
 | `reply_tweet` | `finch reply` |
-| `post_thread` | `finch thread` |
+| `post_thread` | `finch thread` (accepts per-tweet `media`/`alt` params) |
+| `article_draft` | `finch article draft` |
+| `article_publish` | `finch article publish` |
+| `article_post` | `finch article post` |
 | `get_timeline` | `finch timeline` |
 | `list_bookmarks` | `finch bookmark list` |
 | `list_bookmark_folders` | `finch bookmark folders` |
