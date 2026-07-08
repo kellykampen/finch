@@ -699,6 +699,7 @@ describe("ByokTransport.addBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.addBookmark("42", "999");
@@ -714,6 +715,7 @@ describe("ByokTransport.addBookmark", () => {
         createBookmark: async () => ({ data: {} }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     expect(await transport.addBookmark("42", "999")).toEqual({ bookmarked: true });
@@ -726,6 +728,7 @@ describe("ByokTransport.addBookmark", () => {
         createBookmark: async () => ({ errors: [{ detail: "not found" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -752,6 +755,7 @@ describe("ByokTransport.addBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -779,6 +783,7 @@ describe("ByokTransport.removeBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.removeBookmark("42", "999");
@@ -794,6 +799,7 @@ describe("ByokTransport.removeBookmark", () => {
         deleteBookmark: async () => ({ data: {} }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     expect(await transport.removeBookmark("42", "999")).toEqual({ bookmarked: false });
@@ -806,6 +812,7 @@ describe("ByokTransport.removeBookmark", () => {
         deleteBookmark: async () => ({ errors: [{ detail: "not found" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -828,6 +835,7 @@ describe("ByokTransport.removeBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
