@@ -94,6 +94,7 @@ async function startLocalCallbackServer(redirectUri: string, expectedState: stri
   });
 
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port,
     fetch(req) {
       const reqUrl = new URL(req.url);
@@ -142,9 +143,17 @@ async function openSystemBrowser(url: string): Promise<void> {
  * Returns `undefined` when the flag is absent or has no value.
  */
 export function parseClientIdFlag(args: string[]): string | undefined {
-  const idx = args.indexOf("--client-id");
-  if (idx === -1 || idx + 1 >= args.length) return undefined;
-  return args[idx + 1];
+  let i = 0;
+  for (const arg of args) {
+    if (arg === "--client-id") {
+      return args[i + 1];
+    }
+    if (arg.startsWith("--client-id=")) {
+      return arg.slice("--client-id=".length);
+    }
+    i++;
+  }
+  return undefined;
 }
 
 /**

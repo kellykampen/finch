@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { runAuth, runAuthStatus } from "./auth";
+import { runAuth, runAuthStatus, parseClientIdFlag } from "./auth";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import type { FinchOAuth2Config } from "../core/oauth2-config";
@@ -168,6 +168,24 @@ describe("runAuth", () => {
     ).rejects.toThrow(FinchError);
 
     expect(writeCalled).toBe(false);
+  });
+});
+
+describe("parseClientIdFlag", () => {
+  test("returns undefined when the flag is absent", () => {
+    expect(parseClientIdFlag(["auth", "--other", "value"])).toBeUndefined();
+  });
+
+  test("parses space-separated --client-id <id>", () => {
+    expect(parseClientIdFlag(["auth", "--client-id", "abc123"])).toBe("abc123");
+  });
+
+  test("parses equals-syntax --client-id=<id>", () => {
+    expect(parseClientIdFlag(["auth", "--client-id=abc123"])).toBe("abc123");
+  });
+
+  test("prefers equals-syntax over a following bare value", () => {
+    expect(parseClientIdFlag(["--client-id=abc123", "--client-id", "def456"])).toBe("abc123");
   });
 });
 
