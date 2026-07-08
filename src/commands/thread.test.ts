@@ -125,6 +125,19 @@ describe("runThread", () => {
     );
   });
 
+  test("throws USAGE_ERROR when both positional args and --file are given", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "from file\n");
+      await expect(
+        runThread(["positional text", "--file", path], { getTransport: () => fakeTransport({}) }),
+      ).rejects.toThrow(FinchError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("on partial failure, throws with what succeeded plus the failure in detail", async () => {
     let calls = 0;
     const transport = fakeTransport({
