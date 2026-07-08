@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ApiError, type OAuth2Token } from "@xdevplatform/xdk";
@@ -60,6 +60,12 @@ const unusedPostsClient = {
   },
 };
 
+const unusedMediaClient = {
+  upload: async () => {
+    throw new Error("upload not stubbed for this test");
+  },
+};
+
 describe("ByokTransport.getMe", () => {
   test("returns id/username/name on a successful call", async () => {
     const transport = new ByokTransport(
@@ -70,6 +76,7 @@ describe("ByokTransport.getMe", () => {
         }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const me = await transport.getMe();
@@ -81,6 +88,7 @@ describe("ByokTransport.getMe", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, getMe: async () => ({ errors: [{ detail: "no user" }] }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     await expect(transport.getMe()).rejects.toThrow(FinchError);
@@ -102,6 +110,7 @@ describe("ByokTransport.getMe", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -122,6 +131,7 @@ describe("ByokTransport.getMe", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -145,6 +155,7 @@ describe("ByokTransport.getMe", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -166,6 +177,7 @@ describe("ByokTransport.getMe", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -186,6 +198,7 @@ describe("ByokTransport.getMe", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -201,13 +214,17 @@ describe("ByokTransport.getMe", () => {
 describe("ByokTransport.createTweet", () => {
   test("posts a top-level tweet with no reply field", async () => {
     let capturedBody: unknown;
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      create: async (body) => {
-        capturedBody = body;
-        return { data: { id: "1", text: "hello" } };
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        create: async (body) => {
+          capturedBody = body;
+          return { data: { id: "1", text: "hello" } };
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     const result = await transport.createTweet("hello");
 
@@ -217,13 +234,17 @@ describe("ByokTransport.createTweet", () => {
 
   test("includes the reply field when replyToId is given", async () => {
     let capturedBody: unknown;
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      create: async (body) => {
-        capturedBody = body;
-        return { data: { id: "2", text: "a reply" } };
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        create: async (body) => {
+          capturedBody = body;
+          return { data: { id: "2", text: "a reply" } };
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     await transport.createTweet("a reply", "999");
 
@@ -231,10 +252,14 @@ describe("ByokTransport.createTweet", () => {
   });
 
   test("throws CLIENT_ERROR when the API returns no data", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      create: async () => ({ errors: [{ detail: "duplicate content" }] }),
-    });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        create: async () => ({ errors: [{ detail: "duplicate content" }] }),
+      },
+      unusedMediaClient,
+    );
 
     try {
       await transport.createTweet("dup");
@@ -246,12 +271,16 @@ describe("ByokTransport.createTweet", () => {
   });
 
   test("maps a 403 ApiError to AUTH_ERROR", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      create: async () => {
-        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), null);
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        create: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), null);
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     try {
       await transport.createTweet("hello");
@@ -263,14 +292,18 @@ describe("ByokTransport.createTweet", () => {
   });
 
   test("does not misclassify a search-tier 403 on a non-search endpoint as CLIENT_ERROR", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      create: async () => {
-        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
-          detail: "You must enroll in a tier to access search features.",
-        });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        create: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            detail: "You must enroll in a tier to access search features.",
+          });
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     try {
       await transport.createTweet("hello");
@@ -281,16 +314,141 @@ describe("ByokTransport.createTweet", () => {
       expect((err as FinchError).message).toBe("X rejected the provided credentials");
     }
   });
+
+  test("includes media_ids in the request body when mediaIds are provided", async () => {
+    let capturedBody: unknown;
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        create: async (body) => {
+          capturedBody = body;
+          return { data: { id: "3", text: "hello media" } };
+        },
+      },
+      unusedMediaClient,
+    );
+
+    await transport.createTweet("hello media", undefined, ["111", "222"]);
+
+    expect(capturedBody).toEqual({ text: "hello media", media: { media_ids: ["111", "222"] } });
+  });
+});
+
+describe("ByokTransport.uploadImage", () => {
+  test("reads a file, base64-encodes it, and returns the media ID", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-upload-test-"));
+    try {
+      const path = join(dir, "image.png");
+      writeFileSync(path, Buffer.from("fake-image-bytes"));
+
+      let capturedBody: unknown;
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        upload: async (options) => {
+          capturedBody = options.body;
+          return { data: { id: "media-123", media_key: "3_media-123" } };
+        },
+      });
+
+      const result = await transport.uploadImage(path);
+
+      expect(result).toEqual({ media_id: "media-123" });
+      expect(capturedBody).toEqual({
+        media: Buffer.from("fake-image-bytes").toString("base64"),
+        mediaCategory: "tweet_image",
+        mediaType: "image/png",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects unsupported image extensions", async () => {
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, unusedMediaClient);
+
+    await expect(transport.uploadImage("image.gif")).rejects.toThrow(FinchError);
+    try {
+      await transport.uploadImage("image.gif");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("Unsupported image type");
+    }
+  });
+
+  test("rejects missing files", async () => {
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, unusedMediaClient);
+
+    await expect(transport.uploadImage("/does/not/exist.png")).rejects.toThrow(FinchError);
+    try {
+      await transport.uploadImage("/does/not/exist.png");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("Cannot read media file");
+    }
+  });
+
+  test("maps a 403 ApiError to AUTH_ERROR", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-upload-test-"));
+    try {
+      const path = join(dir, "image.png");
+      writeFileSync(path, Buffer.from("fake-image-bytes"));
+
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        upload: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), null);
+        },
+      });
+
+      await expect(transport.uploadImage(path)).rejects.toThrow(FinchError);
+      try {
+        await transport.uploadImage(path);
+      } catch (err) {
+        expect(err).toBeInstanceOf(FinchError);
+        expect((err as FinchError).code).toBe("AUTH_ERROR");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("throws CLIENT_ERROR when the API response has no id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-upload-test-"));
+    try {
+      const path = join(dir, "image.png");
+      writeFileSync(path, Buffer.from("fake-image-bytes"));
+
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        upload: async () => ({ errors: [{ detail: "media rejected" }] }),
+      });
+
+      await expect(transport.uploadImage(path)).rejects.toThrow(FinchError);
+      try {
+        await transport.uploadImage(path);
+      } catch (err) {
+        expect(err).toBeInstanceOf(FinchError);
+        expect((err as FinchError).code).toBe("CLIENT_ERROR");
+        expect((err as FinchError).message).toBe("X API did not return a media ID");
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("ByokTransport.getTweet", () => {
   test("shapes the tweet into the id/text/author_id/created_at contract", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      getById: async () => ({
-        data: { id: "1", text: "hi", authorId: "42", createdAt: "2026-01-01T00:00:00.000Z" },
-      }),
-    });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        getById: async () => ({
+          data: { id: "1", text: "hi", authorId: "42", createdAt: "2026-01-01T00:00:00.000Z" },
+        }),
+      },
+      unusedMediaClient,
+    );
 
     const tweet = await transport.getTweet("1");
 
@@ -303,10 +461,14 @@ describe("ByokTransport.getTweet", () => {
   });
 
   test("throws CLIENT_ERROR when the post isn't found", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      getById: async () => ({ errors: [{ detail: "not found" }] }),
-    });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        getById: async () => ({ errors: [{ detail: "not found" }] }),
+      },
+      unusedMediaClient,
+    );
 
     try {
       await transport.getTweet("999");
@@ -321,13 +483,17 @@ describe("ByokTransport.getTweet", () => {
 describe("ByokTransport.searchRecent", () => {
   test("shapes each result and passes maxResults through", async () => {
     let capturedOptions: unknown;
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      searchRecent: async (_query, options) => {
-        capturedOptions = options;
-        return { data: [{ id: "1", text: "match", authorId: "7" }] };
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        searchRecent: async (_query, options) => {
+          capturedOptions = options;
+          return { data: [{ id: "1", text: "match", authorId: "7" }] };
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     const posts = await transport.searchRecent("hello", 25);
 
@@ -336,10 +502,14 @@ describe("ByokTransport.searchRecent", () => {
   });
 
   test("returns an empty array when the API omits data (zero results)", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      searchRecent: async () => ({}),
-    });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        searchRecent: async () => ({}),
+      },
+      unusedMediaClient,
+    );
 
     expect(await transport.searchRecent("nothing", 10)).toEqual([]);
   });
@@ -347,12 +517,16 @@ describe("ByokTransport.searchRecent", () => {
   test("maps a 429 ApiError to RATE_LIMITED with resetAt", async () => {
     const resetUnixSeconds = 1735689600; // 2025-01-01T00:00:00.000Z
     const headers = new Headers({ "x-rate-limit-reset": String(resetUnixSeconds) });
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      searchRecent: async () => {
-        throw new ApiError("Too Many Requests", 429, "Too Many Requests", headers, null);
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        searchRecent: async () => {
+          throw new ApiError("Too Many Requests", 429, "Too Many Requests", headers, null);
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     try {
       await transport.searchRecent("hello", 10);
@@ -365,18 +539,22 @@ describe("ByokTransport.searchRecent", () => {
   });
 
   test("maps a free-tier search 403 ApiError to CLIENT_ERROR", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      searchRecent: async () => {
-        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
-          title: "Client Forbidden",
-          detail: "This client is not allowed to perform this operation.",
-          type: "https://api.twitter.com/2/problems/client-forbidden",
-          status: 403,
-          reason: "search-access-level",
-        });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        searchRecent: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            title: "Client Forbidden",
+            detail: "This client is not allowed to perform this operation.",
+            type: "https://api.twitter.com/2/problems/client-forbidden",
+            status: 403,
+            reason: "search-access-level",
+          });
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     try {
       await transport.searchRecent("hello", 10);
@@ -389,14 +567,18 @@ describe("ByokTransport.searchRecent", () => {
   });
 
   test("maps a non-tier 403 ApiError to AUTH_ERROR", async () => {
-    const transport = new ByokTransport(unusedUsersClient, {
-      ...unusedPostsClient,
-      searchRecent: async () => {
-        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
-          detail: "some other credentials issue",
-        });
+    const transport = new ByokTransport(
+      unusedUsersClient,
+      {
+        ...unusedPostsClient,
+        searchRecent: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            detail: "some other credentials issue",
+          });
+        },
       },
-    });
+      unusedMediaClient,
+    );
 
     try {
       await transport.searchRecent("hello", 10);
@@ -416,6 +598,7 @@ describe("ByokTransport.userTweets", () => {
         getPosts: async () => ({ data: [{ id: "1", text: "a post", createdAt: "2026-01-01T00:00:00.000Z" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const posts = await transport.userTweets("42", 10);
@@ -432,6 +615,7 @@ describe("ByokTransport.homeTimeline", () => {
         getTimeline: async () => ({ data: [{ id: "1", text: "home" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const posts = await transport.homeTimeline("42", 10);
@@ -448,6 +632,7 @@ describe("ByokTransport.listBookmarks", () => {
         getBookmarks: async () => ({ data: [{ id: "1", text: "saved" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const posts = await transport.listBookmarks("42", 10);
@@ -466,6 +651,7 @@ describe("ByokTransport.listBookmarks", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     await transport.listBookmarks("42", 25);
@@ -482,6 +668,7 @@ describe("ByokTransport.listBookmarks", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     await expect(transport.listBookmarks("42", 10)).rejects.toThrow(FinchError);
@@ -510,6 +697,7 @@ describe("ByokTransport.getUserByUsername", () => {
         }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const profile = await transport.getUserByUsername("kelly");
@@ -527,6 +715,7 @@ describe("ByokTransport.getUserByUsername", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, getByUsername: async () => ({ errors: [{ detail: "not found" }] }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -551,6 +740,7 @@ describe("ByokTransport.like", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.like("1", "999");
@@ -563,6 +753,7 @@ describe("ByokTransport.like", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, likePost: async () => ({ data: {} }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     expect(await transport.like("1", "999")).toEqual({ liked: true });
@@ -572,6 +763,7 @@ describe("ByokTransport.like", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, likePost: async () => ({ errors: [{ detail: "not found" }] }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -596,6 +788,7 @@ describe("ByokTransport.unlike", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.unlike("1", "999");
@@ -608,6 +801,7 @@ describe("ByokTransport.unlike", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, unlikePost: async () => ({ data: {} }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     expect(await transport.unlike("1", "999")).toEqual({ liked: false });
@@ -626,6 +820,7 @@ describe("ByokTransport.retweet", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.retweet("1", "999");
@@ -638,6 +833,7 @@ describe("ByokTransport.retweet", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, repostPost: async () => ({ errors: [{ detail: "duplicate" }] }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -662,6 +858,7 @@ describe("ByokTransport.unretweet", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.unretweet("1", "999");
@@ -683,6 +880,7 @@ describe("ByokTransport.follow", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.follow("1", "42");
@@ -695,6 +893,7 @@ describe("ByokTransport.follow", () => {
     const transport = new ByokTransport(
       { ...unusedUsersClient, followUser: async () => ({ errors: [{ detail: "blocked" }] }) },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -719,6 +918,7 @@ describe("ByokTransport.unfollow", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.unfollow("1", "42");

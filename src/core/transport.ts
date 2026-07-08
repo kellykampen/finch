@@ -1,4 +1,5 @@
 import { Client, ApiError, OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
+import { readFileSync } from "node:fs";
 import { FinchError } from "./errors";
 import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
 import type { OAuth2AuthConfig } from "./oauth2-config";
@@ -52,7 +53,7 @@ export interface DeleteStatus {
  */
 export interface XTransport {
   getMe(): Promise<FinchUser>;
-  createTweet(text: string, replyToId?: string): Promise<CreatedTweet>;
+  createTweet(text: string, replyToId?: string, mediaIds?: string[]): Promise<CreatedTweet>;
   getTweet(id: string): Promise<FinchTweet>;
   searchRecent(query: string, maxResults: number): Promise<FinchTweet[]>;
   userTweets(userId: string, maxResults: number): Promise<FinchTweet[]>;
@@ -66,6 +67,7 @@ export interface XTransport {
   follow(userId: string, targetUserId: string): Promise<FollowStatus>;
   unfollow(userId: string, targetUserId: string): Promise<FollowStatus>;
   deleteTweet(id: string): Promise<DeleteStatus>;
+  uploadImage(path: string): Promise<{ media_id: string }>;
 }
 
 interface GetMeResult {
@@ -132,10 +134,20 @@ interface UsersClientLike {
 }
 
 interface PostsClientLike {
-  create(body: { text?: string; reply?: { in_reply_to_tweet_id: string } }): Promise<ItemResult<TweetLike>>;
+  create(body: {
+    text?: string;
+    reply?: { in_reply_to_tweet_id: string };
+    media?: { media_ids: string[] };
+  }): Promise<ItemResult<TweetLike>>;
   getById(id: string, options?: { tweetFields?: string[] }): Promise<ItemResult<TweetLike>>;
   searchRecent(query: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   delete(id: string): Promise<ItemResult<{ deleted?: boolean }>>;
+}
+
+interface MediaClientLike {
+  upload(options: {
+    body: { media: string; mediaCategory: string; mediaType: string };
+  }): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
 }
 
 // Requested on every tweet-returning call so `author_id`/`created_at` are
@@ -158,6 +170,7 @@ export class ByokTransport implements XTransport {
   constructor(
     private readonly usersClient: UsersClientLike,
     private readonly postsClient: PostsClientLike,
+    private readonly mediaClient: MediaClientLike,
   ) {}
 
   async getMe(): Promise<FinchUser> {
@@ -177,9 +190,13 @@ export class ByokTransport implements XTransport {
     }
   }
 
-  async createTweet(text: string, replyToId?: string): Promise<CreatedTweet> {
+  async createTweet(text: string, replyToId?: string, mediaIds?: string[]): Promise<CreatedTweet> {
     try {
-      const body = replyToId ? { text, reply: { in_reply_to_tweet_id: replyToId } } : { text };
+      const body: { text: string; reply?: { in_reply_to_tweet_id: string }; media?: { media_ids: string[] } } = {
+        text,
+      };
+      if (replyToId) body.reply = { in_reply_to_tweet_id: replyToId };
+      if (mediaIds && mediaIds.length > 0) body.media = { media_ids: mediaIds };
       const res = await this.postsClient.create(body);
       if (!res.data) {
         throw new FinchError("CLIENT_ERROR", "X API did not return the created post", res.errors ?? null);
@@ -365,6 +382,56 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "deleteTweet");
     }
   }
+
+  async uploadImage(path: string): Promise<{ media_id: string }> {
+    const mediaType = resolveMediaType(path);
+    if (!mediaType) {
+      throw new FinchError(
+        "USAGE_ERROR",
+        `Unsupported image type for ${path}. Supported extensions: .jpg, .jpeg, .png, .webp, .bmp, .tiff, .tif`,
+      );
+    }
+
+    let media: string;
+    try {
+      media = readFileSync(path).toString("base64");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new FinchError("USAGE_ERROR", `Cannot read media file ${path}: ${message}`, null);
+    }
+
+    try {
+      const res = await this.mediaClient.upload({
+        body: { media, mediaCategory: "tweet_image", mediaType },
+      });
+      if (!res.data || typeof res.data.id !== "string") {
+        throw new FinchError("CLIENT_ERROR", "X API did not return a media ID", res.errors ?? null);
+      }
+      return { media_id: res.data.id };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "uploadImage");
+    }
+  }
+}
+
+const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
+  {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    bmp: "image/bmp",
+    png: "image/png",
+    webp: "image/webp",
+    tiff: "image/tiff",
+    tif: "image/tiff",
+  };
+
+function resolveMediaType(
+  path: string,
+): "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff" | undefined {
+  const dotIndex = path.lastIndexOf(".");
+  const ext = dotIndex === -1 ? "" : path.slice(dotIndex + 1).toLowerCase();
+  return MEDIA_TYPE_BY_EXTENSION[ext];
 }
 
 function mapSdkError(err: unknown, operation?: string): FinchError {
@@ -425,7 +492,11 @@ function parseRateLimitReset(headers: Headers): string | null {
  */
 export function createOAuth2Transport(accessToken: string): XTransport {
   const client = new Client({ accessToken });
-  return new ByokTransport(client.users as unknown as UsersClientLike, client.posts as unknown as PostsClientLike);
+  return new ByokTransport(
+    client.users as unknown as UsersClientLike,
+    client.posts as unknown as PostsClientLike,
+    client.media as unknown as MediaClientLike,
+  );
 }
 
 // Same redirect URI used by `finch auth`; duplicated here to avoid a circular
@@ -454,9 +525,9 @@ class RefreshingOAuth2Transport implements XTransport {
     return t.getMe();
   }
 
-  async createTweet(text: string, replyToId?: string): Promise<CreatedTweet> {
+  async createTweet(text: string, replyToId?: string, mediaIds?: string[]): Promise<CreatedTweet> {
     const t = await this.ensureFreshToken();
-    return t.createTweet(text, replyToId);
+    return t.createTweet(text, replyToId, mediaIds);
   }
 
   async getTweet(id: string): Promise<FinchTweet> {
@@ -522,6 +593,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async deleteTweet(id: string): Promise<DeleteStatus> {
     const t = await this.ensureFreshToken();
     return t.deleteTweet(id);
+  }
+
+  async uploadImage(path: string): Promise<{ media_id: string }> {
+    const t = await this.ensureFreshToken();
+    return t.uploadImage(path);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {

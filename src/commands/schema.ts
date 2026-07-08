@@ -41,10 +41,11 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   },
   {
     name: "post",
-    description: "Create a top-level post. Text via arg or --file <path>/stdin if arg omitted.",
-    flags: ["--json", "--dry-run", "--file <path>"],
+    description:
+      "Create a top-level post. Text via arg or --file <path>/stdin if arg omitted; attach images with --media <path> (repeatable or comma-separated, up to 4).",
+    flags: ["--json", "--dry-run", "--file <path>", "--media <path>"],
     positionals: ["<text>"],
-    endpoint: "POST /2/tweets { text }",
+    endpoint: "POST /2/tweets { text, media: { media_ids } } + POST /2/media/upload per image",
     dataShape: "{ id: string, text: string }",
   },
   {
