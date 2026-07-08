@@ -42,7 +42,8 @@ interface ParsedPostArgs {
   dryRun: boolean;
   file: string | undefined;
   media: string[];
-  alt: string[];
+  alt: (string | undefined)[];
+  altCount: number;
   positionals: string[];
 }
 
@@ -68,49 +69,57 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
     throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
   }
 
+  const mediaWithAlt = collectMediaWithAlt(flagRegion);
+
   return {
     help: Boolean(bools["--help"] || bools["-h"]),
     dryRun: Boolean(bools["--dry-run"]),
     file: values["--file"],
-    media: collectMediaPaths(flagRegion),
-    alt: collectAltTexts(flagRegion),
+    media: mediaWithAlt.media,
+    alt: mediaWithAlt.alt,
+    altCount: mediaWithAlt.altCount,
     positionals: [...positionals, ...literalRegion],
   };
 }
 
-function collectMediaPaths(flagRegion: string[]): string[] {
-  const paths: string[] = [];
+function collectMediaWithAlt(flagRegion: string[]): { media: string[]; alt: (string | undefined)[]; altCount: number } {
+  const media: string[] = [];
+  const alt: (string | undefined)[] = [];
+  let currentMediaIndex: number | undefined;
+  let altCount = 0;
+
   for (let i = 0; i < flagRegion.length; i++) {
     if (flagRegion[i] === "--media") {
       const value = flagRegion[i + 1];
       if (value === undefined) {
         throw new FinchError("USAGE_ERROR", "Missing value for --media");
       }
-      paths.push(
-        ...value
-          .split(",")
-          .map((p) => p.trim())
-          .filter(Boolean),
-      );
+      const paths = value
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      for (const path of paths) {
+        media.push(path);
+        alt.push(undefined);
+        currentMediaIndex = media.length - 1;
+      }
       i++;
+      continue;
     }
-  }
-  return paths;
-}
-
-function collectAltTexts(flagRegion: string[]): string[] {
-  const alts: string[] = [];
-  for (let i = 0; i < flagRegion.length; i++) {
     if (flagRegion[i] === "--alt") {
       const value = flagRegion[i + 1];
       if (value === undefined) {
         throw new FinchError("USAGE_ERROR", "Missing value for --alt");
       }
-      alts.push(value);
+      altCount++;
+      if (currentMediaIndex !== undefined && alt[currentMediaIndex] === undefined) {
+        alt[currentMediaIndex] = value;
+      }
       i++;
     }
   }
-  return alts;
+
+  return { media, alt, altCount };
 }
 
 /**
@@ -126,7 +135,7 @@ export async function runPost(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const readStdin = deps.readStdin ?? (() => Bun.stdin.text());
 
-  const { help, dryRun, file, media, alt, positionals } = parsePostArgs(argv);
+  const { help, dryRun, file, media, alt, altCount, positionals } = parsePostArgs(argv);
 
   if (help) {
     return { data: { help: true, text: POST_USAGE }, human: POST_USAGE };
@@ -145,16 +154,16 @@ export async function runPost(
     throw new FinchError("USAGE_ERROR", `Too many images: ${media.length} (maximum 4)`);
   }
 
-  if (alt.length > media.length) {
+  if (altCount > media.length) {
     throw new FinchError(
       "USAGE_ERROR",
-      `Too many alt texts: ${alt.length} for ${media.length} image${media.length === 1 ? "" : "s"}`,
+      `Too many alt texts: ${altCount} for ${media.length} image${media.length === 1 ? "" : "s"}`,
     );
   }
 
   if (dryRun) {
     return {
-      data: { dryRun: true, wouldSend: { text, media, alt: alignAlt(media, alt) } },
+      data: { dryRun: true, wouldSend: { text, media, alt } },
       human: `Would post: ${text}${media.length > 0 ? ` with media: ${media.join(", ")}` : ""}`,
     };
   }
@@ -165,7 +174,11 @@ export async function runPost(
   return { data: created, human: `Posted: ${created.id}` };
 }
 
-async function uploadImages(transport: XTransport, paths: string[], altTexts: string[]): Promise<string[]> {
+async function uploadImages(
+  transport: XTransport,
+  paths: string[],
+  altTexts: (string | undefined)[],
+): Promise<string[]> {
   const results = await Promise.all(
     paths.map(async (path, index) => {
       const uploaded = await transport.uploadImage(path);
@@ -177,10 +190,6 @@ async function uploadImages(transport: XTransport, paths: string[], altTexts: st
     }),
   );
   return results;
-}
-
-function alignAlt(media: string[], alt: string[]): (string | undefined)[] {
-  return media.map((_, index) => alt[index]);
 }
 
 async function resolveText(

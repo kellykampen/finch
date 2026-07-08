@@ -267,6 +267,28 @@ describe("runPost", () => {
     expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-a.png", "id-for-b.png"] });
   });
 
+  test("--alt applies to the preceding --media when earlier images omit alt text", async () => {
+    const altCalls: Array<{ mediaId: string; altText: string }> = [];
+    let createdWith: { text?: string; mediaIds?: string[] } = {};
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      setMediaAltText: async (mediaId, altText) => {
+        altCalls.push({ mediaId, altText });
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        createdWith = { text, mediaIds };
+        return { id: "1", text };
+      },
+    });
+
+    await runPost(["hello", "--media", "a.png", "--media", "b.png", "--alt", "B's alt"], {
+      getTransport: () => transport,
+    });
+
+    expect(altCalls).toEqual([{ mediaId: "id-for-b.png", altText: "B's alt" }]);
+    expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-a.png", "id-for-b.png"] });
+  });
+
   test("--alt may be omitted for all images", async () => {
     let altCalled = false;
     let createdWith: { text?: string; mediaIds?: string[] } = {};
