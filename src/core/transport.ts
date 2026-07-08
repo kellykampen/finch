@@ -50,6 +50,11 @@ export interface BookmarkStatus {
   bookmarked: boolean;
 }
 
+export interface FinchBookmarkFolder {
+  id: string;
+  name: string;
+}
+
 /**
  * Every core command function depends on this interface, never on the SDK
  * directly — SdkTransport wraps the SDK's users/posts clients and is shared
@@ -65,6 +70,8 @@ export interface XTransport {
   listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]>;
   addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
   removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
+  listBookmarkFolders(userId: string): Promise<FinchBookmarkFolder[]>;
+  createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
   unlike(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -101,6 +108,11 @@ interface UserLike {
   publicMetrics?: Record<string, unknown>;
 }
 
+interface BookmarkFolderLike {
+  id: string;
+  name: string;
+}
+
 interface ListResult<T> {
   data?: T[];
   errors?: unknown;
@@ -132,6 +144,14 @@ interface UsersClientLike {
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarks(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  getBookmarkFolders(
+    id: string,
+    options?: {
+      maxResults?: number;
+      paginationToken?: string;
+      requestOptions?: unknown;
+    },
+  ): Promise<ListResult<Record<string, unknown>>>;
   createBookmark(id: string, body: { tweetId: string }): Promise<EngageActionResult>;
   deleteBookmark(id: string, tweetId: string): Promise<EngageActionResult>;
   likePost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
@@ -140,6 +160,15 @@ interface UsersClientLike {
   unrepostPost(id: string, sourceTweetId: string): Promise<EngageActionResult>;
   followUser(id: string, options: { body: { targetUserId: string } }): Promise<EngageActionResult>;
   unfollowUser(sourceUserId: string, targetUserId: string): Promise<EngageActionResult>;
+  client?: UnderlyingClientLike;
+}
+
+interface UnderlyingClientLike {
+  request(
+    method: string,
+    path: string,
+    options?: { body?: string; security?: unknown; [key: string]: unknown },
+  ): Promise<unknown>;
 }
 
 interface PostsClientLike {
@@ -191,11 +220,21 @@ function shapeTweet(t: TweetLike): FinchTweet {
   };
 }
 
+function isBookmarkFolderLike(value: unknown): value is BookmarkFolderLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    typeof (value as { name?: unknown }).name === "string"
+  );
+}
+
 export class ByokTransport implements XTransport {
   constructor(
     private readonly usersClient: UsersClientLike,
     private readonly postsClient: PostsClientLike,
     private readonly mediaClient: MediaClientLike = missingMediaClient,
+    private readonly rawClient: UnderlyingClientLike | undefined = usersClient.client,
   ) {}
 
   async getMe(): Promise<FinchUser> {
@@ -321,6 +360,42 @@ export class ByokTransport implements XTransport {
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "removeBookmark");
+    }
+  }
+
+  async listBookmarkFolders(userId: string): Promise<FinchBookmarkFolder[]> {
+    try {
+      const res = await this.usersClient.getBookmarkFolders(userId);
+      const folders: FinchBookmarkFolder[] = [];
+      for (const folder of res.data ?? []) {
+        if (isBookmarkFolderLike(folder)) {
+          folders.push({ id: folder.id, name: folder.name });
+        }
+      }
+      return folders;
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "listBookmarkFolders");
+    }
+  }
+
+  async createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder> {
+    if (!this.rawClient) {
+      throw new FinchError("CLIENT_ERROR", "X SDK client does not expose bookmark folder creation", null);
+    }
+
+    try {
+      const res = (await this.rawClient.request("POST", `/2/users/${encodeURIComponent(userId)}/bookmarks/folders`, {
+        body: JSON.stringify({ name }),
+        security: [{ OAuth2UserToken: ["bookmark.write", "users.read"] }],
+      })) as ItemResult<unknown>;
+      if (!isBookmarkFolderLike(res.data)) {
+        throw new FinchError("CLIENT_ERROR", "X API did not return the created bookmark folder", res.errors ?? null);
+      }
+      return { id: res.data.id, name: res.data.name };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "createBookmarkFolder");
     }
   }
 
@@ -695,6 +770,12 @@ function mapSdkError(err: unknown, operation?: string): FinchError {
       if (operation === "searchRecent" && isSearchTierForbidden(err)) {
         return new FinchError("CLIENT_ERROR", "Your X API tier does not include search access.", err.data ?? null);
       }
+      if (
+        (operation === "listBookmarkFolders" || operation === "createBookmarkFolder") &&
+        isBookmarkFoldersPremiumForbidden(err)
+      ) {
+        return new FinchError("CLIENT_ERROR", "Bookmark folders require X Premium.", err.data ?? null);
+      }
       if ((operation === "addBookmark" || operation === "removeBookmark") && isBookmarkWriteForbidden(err)) {
         return new FinchError(
           "AUTH_ERROR",
@@ -741,6 +822,20 @@ function isBookmarkWriteForbidden(err: ApiError): boolean {
   const haystack = stringifyErrorData(err.data);
   if (haystack.includes("bookmark.write")) return true;
   return haystack.includes("bookmark") && /missing|scope/.test(haystack);
+}
+
+/**
+ * Detects X's Premium-gated bookmark-folder feature. This is intentionally
+ * scoped by operation in mapSdkError so generic 403s on other endpoints keep
+ * their normal auth/credential classification.
+ */
+function isBookmarkFoldersPremiumForbidden(err: ApiError): boolean {
+  if (err.status !== 403) return false;
+  const haystack = stringifyErrorData(err.data);
+  if (haystack.includes("premium_required")) return true;
+  return (
+    haystack.includes("bookmark") && haystack.includes("folder") && /premium|paid|subscrib|tier|eligible/.test(haystack)
+  );
 }
 
 function stringifyErrorData(data: unknown): string {
@@ -839,6 +934,16 @@ class RefreshingOAuth2Transport implements XTransport {
   async removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
     const t = await this.ensureFreshToken();
     return t.removeBookmark(userId, tweetId);
+  }
+
+  async listBookmarkFolders(userId: string): Promise<FinchBookmarkFolder[]> {
+    const t = await this.ensureFreshToken();
+    return t.listBookmarkFolders(userId);
+  }
+
+  async createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder> {
+    const t = await this.ensureFreshToken();
+    return t.createBookmarkFolder(userId, name);
   }
 
   async getUserByUsername(username: string): Promise<FinchUserProfile> {
