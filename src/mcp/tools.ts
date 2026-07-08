@@ -25,6 +25,7 @@ import {
   runBookmarkFolders,
   runBookmarkFolderNew,
 } from "../commands/bookmark";
+import { runArticleDraft, runArticlePublish, runArticlePost } from "../commands/article";
 
 export interface McpToolDeps {
   getTransport?: () => XTransport;
@@ -66,6 +67,8 @@ function buildArgv(
     count?: number;
     dryRun?: boolean;
     folderId?: string;
+    title?: string;
+    cover?: string;
     media?: MediaEntry[];
     threadMedia?: ThreadMediaEntry[];
   } = {},
@@ -74,6 +77,8 @@ function buildArgv(
   if (opts.count !== undefined) argv.push("-n", String(opts.count));
   if (opts.dryRun) argv.push("--dry-run");
   if (opts.folderId !== undefined) argv.push("--folder", opts.folderId);
+  if (opts.title !== undefined) argv.push("--title", opts.title);
+  if (opts.cover !== undefined) argv.push("--cover", opts.cover);
   if (opts.media) {
     for (const { path, alt } of opts.media) {
       argv.push("--media", path);
@@ -313,6 +318,49 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       inputSchema: { username: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
         runTool(() => runUnfollow(buildArgv([args.username as string], { dryRun: args.dryRun as boolean }), deps)),
+    },
+    {
+      name: "article_draft",
+      description: "Create an article draft from a markdown file (maps to `finch article draft`).",
+      inputSchema: {
+        title: z.string(),
+        markdownPath: z.string(),
+        cover: z.string().optional(),
+      },
+      handler: (args) =>
+        runTool(() =>
+          runArticleDraft(
+            buildArgv([args.title as string, args.markdownPath as string], {
+              cover: args.cover as string | undefined,
+            }),
+            deps,
+          ),
+        ),
+    },
+    {
+      name: "article_publish",
+      description: "Publish an existing article draft (maps to `finch article publish`).",
+      inputSchema: { draftId: z.string() },
+      handler: (args) => runTool(() => runArticlePublish(buildArgv([args.draftId as string]), deps)),
+    },
+    {
+      name: "article_post",
+      description: "Create and publish an article draft from a markdown file (maps to `finch article post`).",
+      inputSchema: {
+        markdownPath: z.string(),
+        title: z.string(),
+        cover: z.string().optional(),
+      },
+      handler: (args) =>
+        runTool(() =>
+          runArticlePost(
+            buildArgv([args.markdownPath as string], {
+              title: args.title as string,
+              cover: args.cover as string | undefined,
+            }),
+            deps,
+          ),
+        ),
     },
     {
       name: "whoami",
