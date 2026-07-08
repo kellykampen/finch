@@ -11,7 +11,7 @@ export interface PostResult {
 
 export interface PostDryRunResult {
   dryRun: true;
-  wouldSend: { text: string; media: string[] };
+  wouldSend: { text: string; media: string[]; alt: (string | undefined)[] };
 }
 
 export interface PostHelpResult {
@@ -30,6 +30,7 @@ Flags:
   --dry-run          Validate and show what would be posted without calling the X API
   --file <path>      Read post text from a file
   --media <path>     Attach an image (repeatable or comma-separated; up to 4)
+  --alt <text>       Alt text for the preceding --media image (repeatable)
   --help, -h         Show this help message
 
 Text may be supplied as a positional argument, via --file, or from stdin.
@@ -41,6 +42,7 @@ interface ParsedPostArgs {
   dryRun: boolean;
   file: string | undefined;
   media: string[];
+  alt: string[];
   positionals: string[];
 }
 
@@ -57,7 +59,7 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
-    valueFlags: ["--file", "--media"],
+    valueFlags: ["--file", "--media", "--alt"],
     boolFlags: ["--help", "-h", "--dry-run"],
   });
 
@@ -71,6 +73,7 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
     dryRun: Boolean(bools["--dry-run"]),
     file: values["--file"],
     media: collectMediaPaths(flagRegion),
+    alt: collectAltTexts(flagRegion),
     positionals: [...positionals, ...literalRegion],
   };
 }
@@ -95,6 +98,21 @@ function collectMediaPaths(flagRegion: string[]): string[] {
   return paths;
 }
 
+function collectAltTexts(flagRegion: string[]): string[] {
+  const alts: string[] = [];
+  for (let i = 0; i < flagRegion.length; i++) {
+    if (flagRegion[i] === "--alt") {
+      const value = flagRegion[i + 1];
+      if (value === undefined) {
+        throw new FinchError("USAGE_ERROR", "Missing value for --alt");
+      }
+      alts.push(value);
+      i++;
+    }
+  }
+  return alts;
+}
+
 /**
  * `finch post "<text>"`: text via positional arg, `--file <path>`, or stdin
  * (in that precedence order) when the arg is omitted. `--dry-run` validates
@@ -108,7 +126,7 @@ export async function runPost(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const readStdin = deps.readStdin ?? (() => Bun.stdin.text());
 
-  const { help, dryRun, file, media, positionals } = parsePostArgs(argv);
+  const { help, dryRun, file, media, alt, positionals } = parsePostArgs(argv);
 
   if (help) {
     return { data: { help: true, text: POST_USAGE }, human: POST_USAGE };
@@ -127,22 +145,42 @@ export async function runPost(
     throw new FinchError("USAGE_ERROR", `Too many images: ${media.length} (maximum 4)`);
   }
 
+  if (alt.length > media.length) {
+    throw new FinchError(
+      "USAGE_ERROR",
+      `Too many alt texts: ${alt.length} for ${media.length} image${media.length === 1 ? "" : "s"}`,
+    );
+  }
+
   if (dryRun) {
     return {
-      data: { dryRun: true, wouldSend: { text, media } },
+      data: { dryRun: true, wouldSend: { text, media, alt: alignAlt(media, alt) } },
       human: `Would post: ${text}${media.length > 0 ? ` with media: ${media.join(", ")}` : ""}`,
     };
   }
 
   const transport = getTransport();
-  const mediaIds = media.length > 0 ? await uploadImages(transport, media) : undefined;
+  const mediaIds = media.length > 0 ? await uploadImages(transport, media, alt) : undefined;
   const created = await transport.createTweet(text, undefined, mediaIds);
   return { data: created, human: `Posted: ${created.id}` };
 }
 
-async function uploadImages(transport: XTransport, paths: string[]): Promise<string[]> {
-  const results = await Promise.all(paths.map((path) => transport.uploadImage(path)));
-  return results.map((r) => r.media_id);
+async function uploadImages(transport: XTransport, paths: string[], altTexts: string[]): Promise<string[]> {
+  const results = await Promise.all(
+    paths.map(async (path, index) => {
+      const uploaded = await transport.uploadImage(path);
+      const alt = altTexts[index];
+      if (alt !== undefined) {
+        await transport.setMediaAltText(uploaded.media_id, alt);
+      }
+      return uploaded.media_id;
+    }),
+  );
+  return results;
+}
+
+function alignAlt(media: string[], alt: string[]): (string | undefined)[] {
+  return media.map((_, index) => alt[index]);
 }
 
 async function resolveText(

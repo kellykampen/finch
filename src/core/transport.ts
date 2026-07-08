@@ -74,6 +74,7 @@ export interface XTransport {
   unfollow(userId: string, targetUserId: string): Promise<FollowStatus>;
   deleteTweet(id: string): Promise<DeleteStatus>;
   uploadImage(path: string): Promise<{ media_id: string }>;
+  setMediaAltText(mediaId: string, altText: string): Promise<void>;
 }
 
 interface GetMeResult {
@@ -156,6 +157,9 @@ interface MediaClientLike {
   upload(options: {
     body: { media: string; mediaCategory: string; mediaType: string };
   }): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
+  createMetadata(options: {
+    body: Record<string, unknown>;
+  }): Promise<{ data?: Record<string, unknown>; errors?: unknown[] }>;
 }
 
 // Requested on every tweet-returning call so `author_id`/`created_at` are
@@ -447,6 +451,20 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "uploadImage");
     }
   }
+
+  async setMediaAltText(mediaId: string, altText: string): Promise<void> {
+    try {
+      const res = await this.mediaClient.createMetadata({
+        body: { mediaId, altText: { text: altText } },
+      });
+      if (res.errors && res.errors.length > 0) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the media metadata", res.errors ?? null);
+      }
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "setMediaAltText");
+    }
+  }
 }
 
 const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
@@ -663,6 +681,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async uploadImage(path: string): Promise<{ media_id: string }> {
     const t = await this.ensureFreshToken();
     return t.uploadImage(path);
+  }
+
+  async setMediaAltText(mediaId: string, altText: string): Promise<void> {
+    const t = await this.ensureFreshToken();
+    return t.setMediaAltText(mediaId, altText);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {
