@@ -34,9 +34,8 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/finch-*
-            dist/*.sha256
+          tag_name: ${{ github.ref_name }}
+          files: dist/finch-*
           draft: false
           prerelease: false
           generate_release_notes: true
