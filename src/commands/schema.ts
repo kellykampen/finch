@@ -18,7 +18,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     name: "auth",
     description:
       "Interactive wizard: runs the OAuth 2.0 PKCE browser flow, validates the token with a live call, and writes ~/.finch/config at 0600.",
-    flags: ["--json"],
+    flags: ["--json", "--client-id <id>"],
     positionals: [],
     endpoint: "SDK client.users.getMe() (validation only)",
     dataShape: "{ configured: true, username: string }",
@@ -69,7 +69,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     flags: ["--json", "-n <count>"],
     positionals: [],
     endpoint: "GET /2/users/:id/timelines/reverse_chronological",
-    dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
+    dataShape: "{ posts: [{ id, text, author_id: string | null, created_at: string | null }] }",
   },
   {
     name: "search",
@@ -77,7 +77,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     flags: ["--json", "-n <count>"],
     positionals: ["<query>"],
     endpoint: "GET /2/tweets/search/recent",
-    dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
+    dataShape: "{ posts: [{ id, text, author_id: string | null, created_at: string | null }] }",
   },
   {
     name: "user-posts",
@@ -85,7 +85,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     flags: ["--json", "-n <count>"],
     positionals: ["<username>"],
     endpoint: "GET /2/users/by/username/:username then GET /2/users/:id/tweets",
-    dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
+    dataShape: "{ posts: [{ id, text, author_id: string | null, created_at: string | null }] }",
   },
   {
     name: "user",
@@ -101,7 +101,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     flags: ["--json"],
     positionals: ["<id-or-url>"],
     endpoint: "GET /2/tweets/:id",
-    dataShape: "{ id, text, author_id, created_at }",
+    dataShape: "{ id, text, author_id: string | null, created_at: string | null }",
   },
   {
     name: "like",
