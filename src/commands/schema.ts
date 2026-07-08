@@ -163,6 +163,14 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ deleted: true, tweet_id: string }",
   },
   {
+    name: "article draft",
+    description: "Create an article draft from a markdown file.",
+    flags: ["--json", "--cover <path>"],
+    positionals: ["<title>", "<markdown-file-path>"],
+    endpoint: "POST /2/articles/draft { title, content_state } (+ POST /2/media/upload for --cover)",
+    dataShape: "{ id: string }",
+  },
+  {
     name: "bookmark list",
     description: "Fetch the authenticated user's bookmarked posts, optionally scoped to a bookmark folder.",
     flags: ["--json", "-n <count>", "--count <count>", "--folder <id>"],

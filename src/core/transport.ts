@@ -85,6 +85,7 @@ export interface XTransport {
   uploadImage(path: string): Promise<{ media_id: string }>;
   uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }>;
   setMediaAltText(mediaId: string, altText: string): Promise<void>;
+  createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }>;
 }
 
 interface GetMeResult {
@@ -648,6 +649,34 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "setMediaAltText");
     }
   }
+
+  async createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }> {
+    if (!this.rawClient) {
+      throw new FinchError("CLIENT_ERROR", "X SDK client does not expose article draft creation", null);
+    }
+
+    const body: { title: string; content_state: object; cover_media?: { media_id: string } } = {
+      title,
+      content_state: contentState,
+    };
+    if (coverMediaId !== undefined) {
+      body.cover_media = { media_id: coverMediaId };
+    }
+
+    try {
+      const res = (await this.rawClient.request("POST", "/2/articles/draft", {
+        body: JSON.stringify(body),
+        security: [{ OAuth2UserToken: ["tweet.write"] }],
+      })) as ItemResult<unknown>;
+      if (!res.data || typeof (res.data as { id?: unknown }).id !== "string") {
+        throw new FinchError("CLIENT_ERROR", "X API did not return the created article draft", res.errors ?? null);
+      }
+      return { id: (res.data as { id: string }).id };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "createArticleDraft");
+    }
+  }
 }
 
 const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
@@ -1076,6 +1105,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async setMediaAltText(mediaId: string, altText: string): Promise<void> {
     const t = await this.ensureFreshToken();
     return t.setMediaAltText(mediaId, altText);
+  }
+
+  async createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }> {
+    const t = await this.ensureFreshToken();
+    return t.createArticleDraft(title, contentState, coverMediaId);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {
