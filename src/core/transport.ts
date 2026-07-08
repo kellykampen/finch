@@ -224,6 +224,9 @@ export class ByokTransport implements XTransport {
       upload: async () => {
         throw new Error("media upload client not provided");
       },
+      createMetadata: async () => {
+        throw new Error("media upload client not provided");
+      },
     },
     private readonly rawClient: UnderlyingClientLike | undefined = usersClient.client,
   ) {}
