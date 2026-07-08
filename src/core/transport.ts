@@ -171,7 +171,7 @@ export class ByokTransport implements XTransport {
       return { id: res.data.id, username: res.data.username, name: res.data.name };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "getMe");
     }
   }
 
@@ -185,7 +185,7 @@ export class ByokTransport implements XTransport {
       return { id: res.data.id, text: res.data.text };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "createTweet");
     }
   }
 
@@ -198,7 +198,7 @@ export class ByokTransport implements XTransport {
       return shapeTweet(res.data);
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "getTweet");
     }
   }
 
@@ -211,7 +211,7 @@ export class ByokTransport implements XTransport {
       return (res.data ?? []).map(shapeTweet);
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "searchRecent");
     }
   }
 
@@ -224,7 +224,7 @@ export class ByokTransport implements XTransport {
       return (res.data ?? []).map(shapeTweet);
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "userTweets");
     }
   }
 
@@ -237,7 +237,7 @@ export class ByokTransport implements XTransport {
       return (res.data ?? []).map(shapeTweet);
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "homeTimeline");
     }
   }
 
@@ -256,7 +256,7 @@ export class ByokTransport implements XTransport {
       };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "getUserByUsername");
     }
   }
 
@@ -269,7 +269,7 @@ export class ByokTransport implements XTransport {
       return { liked: (res.data.liked as boolean | undefined) ?? true };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "like");
     }
   }
 
@@ -282,7 +282,7 @@ export class ByokTransport implements XTransport {
       return { liked: (res.data.liked as boolean | undefined) ?? false };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "unlike");
     }
   }
 
@@ -295,7 +295,7 @@ export class ByokTransport implements XTransport {
       return { reposted: (res.data.retweeted as boolean | undefined) ?? true };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "retweet");
     }
   }
 
@@ -308,7 +308,7 @@ export class ByokTransport implements XTransport {
       return { reposted: (res.data.retweeted as boolean | undefined) ?? false };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "unretweet");
     }
   }
 
@@ -321,7 +321,7 @@ export class ByokTransport implements XTransport {
       return { following: (res.data.following as boolean | undefined) ?? true };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "follow");
     }
   }
 
@@ -334,7 +334,7 @@ export class ByokTransport implements XTransport {
       return { following: (res.data.following as boolean | undefined) ?? false };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "unfollow");
     }
   }
 
@@ -347,14 +347,17 @@ export class ByokTransport implements XTransport {
       return { deleted: (res.data.deleted as boolean | undefined) ?? true };
     } catch (err) {
       if (err instanceof FinchError) throw err;
-      throw mapSdkError(err);
+      throw mapSdkError(err, "deleteTweet");
     }
   }
 }
 
-function mapSdkError(err: unknown): FinchError {
+function mapSdkError(err: unknown, operation?: string): FinchError {
   if (err instanceof ApiError) {
     if (err.status === 401 || err.status === 403) {
+      if (operation === "searchRecent" && isSearchTierForbidden(err)) {
+        return new FinchError("CLIENT_ERROR", "Your X API tier does not include search access.", err.data ?? null);
+      }
       return new FinchError("AUTH_ERROR", "X rejected the provided credentials", err.data ?? null);
     }
     if (err.status === 429) {
@@ -366,6 +369,30 @@ function mapSdkError(err: unknown): FinchError {
   }
   const message = err instanceof Error ? err.message : String(err);
   return new FinchError("NETWORK_ERROR", message, null);
+}
+
+/**
+ * Detects X's free/basic-tier search restriction. The X API returns a 403
+ * with `reason: "search-access-level"` (or similar search/access language in
+ * the error body) when the app tier does not include the recent-search
+ * endpoint. This must be surfaced as a CLIENT_ERROR so the caller understands
+ * the limit rather than seeing a generic auth/credential failure.
+ */
+function isSearchTierForbidden(err: ApiError): boolean {
+  if (err.status !== 403) return false;
+  const haystack = stringifyErrorData(err.data);
+  if (haystack.includes("search-access-level")) return true;
+  return haystack.includes("search") && /access|tier|enroll/.test(haystack);
+}
+
+function stringifyErrorData(data: unknown): string {
+  if (data === null || data === undefined) return "";
+  if (typeof data === "string") return data.toLowerCase();
+  try {
+    return JSON.stringify(data).toLowerCase();
+  } catch {
+    return String(data).toLowerCase();
+  }
 }
 
 function parseRateLimitReset(headers: Headers): string | null {
