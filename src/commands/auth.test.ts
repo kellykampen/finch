@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { runAuth, runAuthStatus, parseClientIdFlag } from "./auth";
+import { runAuth, runAuthStatus, parseClientIdFlag, startLocalCallbackServer } from "./auth";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import type { FinchOAuth2Config } from "../core/oauth2-config";
@@ -239,6 +239,61 @@ describe("parseClientIdFlag", () => {
 
   test("prefers equals-syntax over a following bare value", () => {
     expect(parseClientIdFlag(["--client-id=abc123", "--client-id", "def456"])).toBe("abc123");
+  });
+});
+
+describe("startLocalCallbackServer", () => {
+  test("serves the full success response for a valid callback and captures the code", async () => {
+    const state = "test-state-valid";
+    const server = await startLocalCallbackServer("http://127.0.0.1:0/callback", state);
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/callback?code=valid-code&state=${state}`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toContain("Authenticated");
+    } finally {
+      await server.stop();
+    }
+
+    const code = await server.waitForCode();
+    expect(code).toEqual({ code: "valid-code", state });
+  });
+
+  test("returns 400 when the authorization code is missing", async () => {
+    const state = "test-state-missing";
+    const server = await startLocalCallbackServer("http://127.0.0.1:0/callback", state);
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/callback?state=${state}`);
+      expect(res.status).toBe(400);
+      const body = await res.text();
+      expect(body).toContain("missing");
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("returns 403 when the state does not match", async () => {
+    const state = "test-state-match";
+    const server = await startLocalCallbackServer("http://127.0.0.1:0/callback", state);
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/callback?code=valid-code&state=wrong`);
+      expect(res.status).toBe(403);
+      const body = await res.text();
+      expect(body).toContain("state mismatch");
+    } finally {
+      await server.stop();
+    }
+  });
+
+  test("returns 404 for an unknown path", async () => {
+    const state = "test-state-path";
+    const server = await startLocalCallbackServer("http://127.0.0.1:0/callback", state);
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/not-callback?code=valid-code&state=${state}`);
+      expect(res.status).toBe(404);
+    } finally {
+      await server.stop();
+    }
   });
 });
 
