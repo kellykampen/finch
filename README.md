@@ -30,15 +30,11 @@ to type is also safe for an agent to shell out to and parse.
 
 ## Install
 
-**Homebrew (planned):**
+**Homebrew:**
 
 ```bash
-brew install kellykampen/finch/finch
+brew install kellykampen/tap/finch
 ```
-
-The `kellykampen/homebrew-finch` tap and formula aren't published yet (tracked as a
-distribution milestone in `docs/PLAN.md`) — this is the target install command once
-they ship, not something you can run today.
 
 **From source (works now):**
 
@@ -58,8 +54,7 @@ dependency of its own.
 Paste this into any agent harness to get it using Finch with zero other context:
 
 ```
-Install finch: `brew install kellykampen/finch/finch` (once published — build from
-source per the finch README if brew isn't available yet). Confirm the human running
+Install finch: `brew install kellykampen/tap/finch`. Confirm the human running
 you has already run `finch auth` to configure their X credentials into
 ~/.finch/config — you can't do this step yourself; if it's not configured, tell the
 human to run `finch auth` and stop. Once configured, either call `finch` commands
