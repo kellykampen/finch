@@ -29,3 +29,6 @@ jobs:
           bun build --compile ./src/index.ts --outfile finch
           ./finch auth status --json
           ./scripts/verify-auth-callback-server.sh
+
+      - name: Regression checklist
+        run: ./scripts/regression-checklist.sh
