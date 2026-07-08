@@ -83,7 +83,11 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
   };
 }
 
-function collectMediaWithAlt(flagRegion: string[]): { media: string[]; alt: (string | undefined)[]; altCount: number } {
+export function collectMediaWithAlt(flagRegion: string[]): {
+  media: string[];
+  alt: (string | undefined)[];
+  altCount: number;
+} {
   const media: string[] = [];
   const alt: (string | undefined)[] = [];
   let currentMediaIndex: number | undefined;
@@ -185,7 +189,7 @@ interface PlannedMediaUpload {
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "bmp", "png", "webp", "tiff", "tif"]);
 const VIDEO_EXTENSIONS = new Set(["gif", "mp4", "mov", "webm", "ts", "m2ts"]);
 
-function planMediaUploads(paths: string[]): PlannedMediaUpload {
+export function planMediaUploads(paths: string[]): PlannedMediaUpload {
   const kinds = paths.map((path) => ({ path, kind: classifyMediaPath(path) }));
   const unsupported = kinds.find((item) => item.kind === undefined);
   if (unsupported) {
@@ -211,7 +215,7 @@ function planMediaUploads(paths: string[]): PlannedMediaUpload {
   return videoPaths.length === 1 ? { kind: "video", paths: videoPaths } : { kind: "image", paths: imagePaths };
 }
 
-function classifyMediaPath(path: string): MediaKind | undefined {
+export function classifyMediaPath(path: string): MediaKind | undefined {
   const dotIndex = path.lastIndexOf(".");
   const ext = dotIndex === -1 ? "" : path.slice(dotIndex + 1).toLowerCase();
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
@@ -219,7 +223,7 @@ function classifyMediaPath(path: string): MediaKind | undefined {
   return undefined;
 }
 
-async function uploadMedia(
+export async function uploadMedia(
   transport: XTransport,
   plan: PlannedMediaUpload,
   altTexts: (string | undefined)[],
@@ -233,7 +237,7 @@ async function uploadMedia(
   return uploadImages(transport, plan.paths, altTexts);
 }
 
-async function uploadImages(
+export async function uploadImages(
   transport: XTransport,
   paths: string[],
   altTexts: (string | undefined)[],
