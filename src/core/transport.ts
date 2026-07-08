@@ -380,3 +380,13 @@ export function createByokTransport(auth: FinchAuthConfig): XTransport {
   // is required here even though the runtime shapes line up exactly.
   return new ByokTransport(client.users as unknown as UsersClientLike, client.posts as unknown as PostsClientLike);
 }
+
+/**
+ * Constructs an OAuth2 user-context transport from a bearer access token.
+ * Reuses ByokTransport because the SDK's users/posts clients are identical
+ * once the Client is authenticated with OAuth2.
+ */
+export function createOAuth2Transport(accessToken: string): XTransport {
+  const client = new Client({ accessToken });
+  return new ByokTransport(client.users as unknown as UsersClientLike, client.posts as unknown as PostsClientLike);
+}
