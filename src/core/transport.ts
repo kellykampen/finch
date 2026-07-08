@@ -86,6 +86,7 @@ export interface XTransport {
   uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }>;
   setMediaAltText(mediaId: string, altText: string): Promise<void>;
   createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }>;
+  publishArticleDraft(draftId: string): Promise<{ post_id: string }>;
 }
 
 interface GetMeResult {
@@ -677,6 +678,29 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "createArticleDraft");
     }
   }
+
+  async publishArticleDraft(draftId: string): Promise<{ post_id: string }> {
+    if (!this.rawClient) {
+      throw new FinchError("CLIENT_ERROR", "X SDK client does not expose article draft publishing", null);
+    }
+
+    try {
+      const res = (await this.rawClient.request("POST", `/2/articles/${encodeURIComponent(draftId)}/publish`, {
+        security: [{ OAuth2UserToken: ["tweet.write"] }],
+      })) as ItemResult<unknown>;
+      if (!res.data || typeof (res.data as { post_id?: unknown }).post_id !== "string") {
+        throw new FinchError(
+          "CLIENT_ERROR",
+          "X API did not return the published article's post ID",
+          res.errors ?? null,
+        );
+      }
+      return { post_id: (res.data as { post_id: string }).post_id };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "publishArticleDraft");
+    }
+  }
 }
 
 const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
@@ -1110,6 +1134,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }> {
     const t = await this.ensureFreshToken();
     return t.createArticleDraft(title, contentState, coverMediaId);
+  }
+
+  async publishArticleDraft(draftId: string): Promise<{ post_id: string }> {
+    const t = await this.ensureFreshToken();
+    return t.publishArticleDraft(draftId);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {
