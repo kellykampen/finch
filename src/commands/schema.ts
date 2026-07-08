@@ -170,6 +170,14 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
   },
   {
+    name: "bookmark folders",
+    description: "List the authenticated user's bookmark folders. Bookmark folders require X Premium.",
+    flags: ["--json"],
+    positionals: [],
+    endpoint: "GET /2/users/:id/bookmarks/folders",
+    dataShape: "{ folders: [{ id: string, name: string }] }",
+  },
+  {
     name: "bookmark add",
     description: "Bookmark a post.",
     flags: ["--json", "--dry-run"],
@@ -184,6 +192,14 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     positionals: ["<id-or-url>"],
     endpoint: "DELETE /2/users/:id/bookmarks/:tweet_id",
     dataShape: "{ bookmarked: false, tweet_id: string }",
+  },
+  {
+    name: "bookmark folder new",
+    description: "Create a bookmark folder. Bookmark folders require X Premium.",
+    flags: ["--json"],
+    positionals: ["<name>"],
+    endpoint: "POST /2/users/:id/bookmarks/folders",
+    dataShape: "{ folder: { id: string, name: string } }",
   },
   {
     name: "config get",
