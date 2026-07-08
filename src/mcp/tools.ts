@@ -62,11 +62,18 @@ interface ThreadMediaEntry extends MediaEntry {
 
 function buildArgv(
   positionals: string[],
-  opts: { count?: number; dryRun?: boolean; media?: MediaEntry[]; threadMedia?: ThreadMediaEntry[] } = {},
+  opts: {
+    count?: number;
+    dryRun?: boolean;
+    folderId?: string;
+    media?: MediaEntry[];
+    threadMedia?: ThreadMediaEntry[];
+  } = {},
 ): string[] {
   const argv: string[] = [];
   if (opts.count !== undefined) argv.push("-n", String(opts.count));
   if (opts.dryRun) argv.push("--dry-run");
+  if (opts.folderId !== undefined) argv.push("--folder", opts.folderId);
   if (opts.media) {
     for (const { path, alt } of opts.media) {
       argv.push("--media", path);
@@ -179,8 +186,20 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
     {
       name: "list_bookmarks",
       description: "Fetch the authenticated user's bookmarked posts (maps to `finch bookmark list`).",
-      inputSchema: { count: z.number().int().positive().optional() },
-      handler: (args) => runTool(() => runBookmarkList(buildArgv([], { count: args.count as number }), deps)),
+      inputSchema: {
+        count: z.number().int().positive().optional(),
+        folderId: z.string().optional(),
+      },
+      handler: (args) =>
+        runTool(() =>
+          runBookmarkList(
+            buildArgv([], {
+              count: args.count as number,
+              folderId: args.folderId as string | undefined,
+            }),
+            deps,
+          ),
+        ),
     },
     {
       name: "list_bookmark_folders",
@@ -191,9 +210,21 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
     {
       name: "add_bookmark",
       description: "Bookmark a post (maps to `finch bookmark add`).",
-      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      inputSchema: {
+        idOrUrl: z.string(),
+        folderId: z.string().optional(),
+        dryRun: z.boolean().optional(),
+      },
       handler: (args) =>
-        runTool(() => runBookmarkAdd(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
+        runTool(() =>
+          runBookmarkAdd(
+            buildArgv([args.idOrUrl as string], {
+              dryRun: args.dryRun as boolean,
+              folderId: args.folderId as string | undefined,
+            }),
+            deps,
+          ),
+        ),
     },
     {
       name: "remove_bookmark",

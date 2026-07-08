@@ -180,6 +180,23 @@ finch unfollow kellykampen
 finch delete 1234567890123456789
 ```
 
+**Bookmarks:**
+
+```bash
+finch bookmark list
+finch bookmark list -n 20
+finch bookmark list --folder 1234567890123456789
+finch bookmark add 1234567890123456789
+finch bookmark add https://x.com/user/status/1234567890123456789 --folder 1234567890123456789
+finch bookmark rm 1234567890123456789
+finch bookmark folders
+finch bookmark folder new "Project notes"
+```
+
+Bookmarks require the `bookmark.read` / `bookmark.write` OAuth2 scopes. Bookmark
+folders (listing folders, creating a folder, and any `--folder`-scoped `list` or
+`add`) require an X Premium account; plain bookmark `list` / `add` / `rm` do not.
+
 Every `<id-or-url>` argument accepts a bare post ID or a full `x.com`/`twitter.com`
 status URL; usernames accept an optional leading `@`.
 
@@ -238,6 +255,10 @@ argument. Tool surface (name → CLI equivalent):
 | `reply_tweet` | `finch reply` |
 | `post_thread` | `finch thread` |
 | `get_timeline` | `finch timeline` |
+| `list_bookmarks` | `finch bookmark list` |
+| `list_bookmark_folders` | `finch bookmark folders` |
+| `add_bookmark` / `remove_bookmark` | `finch bookmark add` / `finch bookmark rm` |
+| `create_bookmark_folder` | `finch bookmark folder new` |
 | `search_tweets` | `finch search` |
 | `get_user_posts` | `finch user-posts` |
 | `get_user_profile` | `finch user` |
