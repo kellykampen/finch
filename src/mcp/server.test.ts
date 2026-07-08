@@ -9,7 +9,7 @@ import { createFinchMcpServer } from "./server";
 
 describe("createFinchMcpServer", () => {
   test("builds an McpServer with every tool registered, without connecting a transport", () => {
-    const server = createFinchMcpServer({ resolveAuth: () => null });
+    const server = createFinchMcpServer({});
 
     expect(server).toBeInstanceOf(McpServer);
     expect(server.isConnected()).toBe(false);
@@ -20,7 +20,7 @@ describe("createFinchMcpServer", () => {
     let skillPath: string;
 
     async function connectedClient(deps: Parameters<typeof createFinchMcpServer>[0] = {}): Promise<Client> {
-      const server = createFinchMcpServer({ resolveAuth: () => null, ...deps });
+      const server = createFinchMcpServer(deps);
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       const client = new Client({ name: "test-client", version: "1.0.0" });
       await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);

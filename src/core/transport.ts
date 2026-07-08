@@ -1,7 +1,6 @@
-import { Client, OAuth1, ApiError, OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
-import type { FinchAuthConfig } from "./config";
+import { Client, ApiError, OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
 import { FinchError } from "./errors";
-import { writeOAuth2Config } from "./oauth2-config";
+import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
 import type { OAuth2AuthConfig } from "./oauth2-config";
 
 export interface FinchUser {
@@ -44,8 +43,8 @@ export interface FollowStatus {
 
 /**
  * Every core command function depends on this interface, never on the SDK
- * directly — ByokTransport is v1's only implementation; a phase-2
- * ProxyTransport slots in here without touching command handlers.
+ * directly — SdkTransport wraps the SDK's users/posts clients and is shared
+ * by the OAuth2-backed transports below.
  */
 export interface XTransport {
   getMe(): Promise<FinchUser>;
@@ -359,31 +358,6 @@ function parseRateLimitReset(headers: Headers): string | null {
 }
 
 /**
- * Constructs the real SDK-backed transport. `OAuth1Config.apiSecret` is the
- * SDK's name for Finch's own `auth.apiKeySecret` field — mapped here, not
- * renamed in Finch's config schema (which matches the X Developer Portal's
- * own field label).
- */
-export function createByokTransport(auth: FinchAuthConfig): XTransport {
-  const oauth1 = new OAuth1({
-    apiKey: auth.apiKey,
-    apiSecret: auth.apiKeySecret,
-    accessToken: auth.accessToken,
-    accessTokenSecret: auth.accessTokenSecret,
-    // Only the redirect-based request-token flow uses this; OAuth1 in v1 is
-    // constructed straight from already-issued user-context tokens.
-    callback: "oob",
-  });
-  const client = new Client({ oauth1 });
-  // The SDK's real client methods are overloaded (a `requestOptions.raw`
-  // variant returning the raw `Response` alongside the parsed-JSON variant
-  // ByokTransport actually uses) — TS can't structurally match an overloaded
-  // method against our single-signature *ClientLike interfaces, so the cast
-  // is required here even though the runtime shapes line up exactly.
-  return new ByokTransport(client.users as unknown as UsersClientLike, client.posts as unknown as PostsClientLike);
-}
-
-/**
  * Constructs an OAuth2 user-context transport from a bearer access token.
  * Reuses ByokTransport because the SDK's users/posts clients are identical
  * once the Client is authenticated with OAuth2.
@@ -538,4 +512,16 @@ export function createRefreshingOAuth2Transport(
     buildTransportFn: deps?.buildTransportFn ?? createOAuth2Transport,
     nowFn: deps?.nowFn ?? Date.now,
   });
+}
+
+/**
+ * Resolves the active OAuth2 transport from the user's config file.
+ * Throws a FinchError if the user has not yet run `finch auth`.
+ */
+export function resolveOAuth2Transport(): XTransport {
+  const config = readOAuth2Config();
+  if (!config) {
+    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+  }
+  return createRefreshingOAuth2Transport(config.auth);
 }

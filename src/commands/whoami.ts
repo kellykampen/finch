@@ -1,22 +1,13 @@
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport, type FinchUser } from "../core/transport";
-import { FinchError } from "../core/errors";
+import { resolveOAuth2Transport, type XTransport, type FinchUser } from "../core/transport";
 
 export interface WhoamiDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
 }
 
 export async function runWhoami(deps: WhoamiDeps = {}): Promise<{ data: FinchUser; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-
-  const transport = transportFactory(auth);
+  const transport = getTransport();
   const me = await transport.getMe();
   return { data: me, human: `@${me.username} (${me.name})` };
 }

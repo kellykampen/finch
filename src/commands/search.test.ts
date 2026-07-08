@@ -3,7 +3,6 @@ import { runSearch } from "./search";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
 const post = { id: "1", text: "match", author_id: "42", created_at: null };
 
 describe("runSearch", () => {
@@ -18,10 +17,7 @@ describe("runSearch", () => {
       },
     });
 
-    const result = await runSearch(["hello world"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runSearch(["hello world"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ posts: [post] });
     expect(capturedQuery).toBe("hello world");
@@ -37,26 +33,20 @@ describe("runSearch", () => {
       },
     });
 
-    await runSearch(["hello", "-n", "50"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    await runSearch(["hello", "-n", "50"], { getTransport: () => transport });
 
     expect(capturedCount).toBe(50);
   });
 
   test("throws USAGE_ERROR when the query is missing", async () => {
-    await expect(
-      runSearch([], { resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport({}) }),
-    ).rejects.toThrow(FinchError);
+    await expect(runSearch([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runSearch(["hello"], {
-        resolveAuth: () => null,
-        transportFactory: () => {
-          throw new Error("should not be called");
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
       }),
     ).rejects.toThrow(FinchError);

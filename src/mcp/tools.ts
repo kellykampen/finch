@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { FinchAuthConfig } from "../core/config";
 import type { XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { runPost } from "../commands/post";
@@ -20,8 +19,7 @@ import { runUnfollow } from "../commands/unfollow";
 import { runWhoami } from "../commands/whoami";
 
 export interface McpToolDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
   /** Override for the `skills` tool's SKILL.md path — see server.ts's defaultSkillPath(). */
   skillPath?: string;
 }

@@ -3,7 +3,6 @@ import { runTimeline } from "./timeline";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
 const post = { id: "1", text: "hi", author_id: "42", created_at: null };
 
 describe("runTimeline", () => {
@@ -19,10 +18,7 @@ describe("runTimeline", () => {
       },
     });
 
-    const result = await runTimeline([], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runTimeline([], { getTransport: () => transport });
 
     expect(result.data).toEqual({ posts: [post] });
     expect(capturedUserId).toBe("42");
@@ -39,10 +35,7 @@ describe("runTimeline", () => {
       },
     });
 
-    await runTimeline(["-n", "25"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    await runTimeline(["-n", "25"], { getTransport: () => transport });
 
     expect(capturedCount).toBe(25);
   });
@@ -50,9 +43,8 @@ describe("runTimeline", () => {
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runTimeline([], {
-        resolveAuth: () => null,
-        transportFactory: () => {
-          throw new Error("should not be called");
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
       }),
     ).rejects.toThrow(FinchError);

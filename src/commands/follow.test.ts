@@ -3,8 +3,6 @@ import { runFollow } from "./follow";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
-
 describe("runFollow", () => {
   test("resolves the username to a user id before following", async () => {
     let capturedUsername: string | undefined;
@@ -21,10 +19,7 @@ describe("runFollow", () => {
       },
     });
 
-    const result = await runFollow(["someuser"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runFollow(["someuser"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ following: true, username: "someuser" });
     expect(capturedUsername).toBe("someuser");
@@ -44,18 +39,14 @@ describe("runFollow", () => {
       follow: async () => ({ following: true }),
     });
 
-    const result = await runFollow(["@someuser"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runFollow(["@someuser"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ following: true, username: "someuser" });
   });
 
   test("--dry-run reports wouldSend without calling the transport", async () => {
     const result = await runFollow(["someuser", "--dry-run"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => {
+      getTransport: () => {
         throw new Error("should not be called");
       },
     });
@@ -65,9 +56,8 @@ describe("runFollow", () => {
 
   test("--dry-run doesn't require auth to be configured", async () => {
     const result = await runFollow(["someuser", "--dry-run"], {
-      resolveAuth: () => null,
-      transportFactory: () => {
-        throw new Error("should not be called");
+      getTransport: () => {
+        throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
       },
     });
 
@@ -75,17 +65,14 @@ describe("runFollow", () => {
   });
 
   test("throws USAGE_ERROR when the username argument is missing", async () => {
-    await expect(
-      runFollow([], { resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport({}) }),
-    ).rejects.toThrow(FinchError);
+    await expect(runFollow([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runFollow(["someuser"], {
-        resolveAuth: () => null,
-        transportFactory: () => {
-          throw new Error("should not be called");
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
       }),
     ).rejects.toThrow(FinchError);

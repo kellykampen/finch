@@ -1,5 +1,4 @@
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport } from "../core/transport";
+import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { validatePostText } from "../core/validation";
 import { extractTweetId } from "../core/ids";
@@ -17,8 +16,7 @@ export interface ReplyDryRunResult {
 }
 
 export interface ReplyDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
 }
 
 /** `finch reply <id-or-url> "<text>"`: replies to an existing post. */
@@ -26,8 +24,7 @@ export async function runReply(
   argv: string[],
   deps: ReplyDeps = {},
 ): Promise<{ data: ReplyResult | ReplyDryRunResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
   const [idOrUrl, text] = positionals;
@@ -47,12 +44,7 @@ export async function runReply(
     };
   }
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-
-  const transport = transportFactory(auth);
+  const transport = getTransport();
   const created = await transport.createTweet(text, replyToId);
   return {
     data: { id: created.id, text: created.text, in_reply_to: replyToId },

@@ -6,18 +6,13 @@ import { runPost } from "./post";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
-
 describe("runPost", () => {
   test("posts the positional text arg", async () => {
     const transport = fakeTransport({
       createTweet: async (text) => ({ id: "1", text }),
     });
 
-    const result = await runPost(["hello world"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runPost(["hello world"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ id: "1", text: "hello world" });
   });
@@ -31,10 +26,7 @@ describe("runPost", () => {
         createTweet: async (text) => ({ id: "1", text }),
       });
 
-      const result = await runPost(["--file", path], {
-        resolveAuth: () => fakeAuth,
-        transportFactory: () => transport,
-      });
+      const result = await runPost(["--file", path], { getTransport: () => transport });
 
       expect(result.data).toEqual({ id: "1", text: "from a file" });
     } finally {
@@ -47,11 +39,7 @@ describe("runPost", () => {
       createTweet: async (text) => ({ id: "1", text }),
     });
 
-    const result = await runPost([], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-      readStdin: async () => "from stdin\n",
-    });
+    const result = await runPost([], { getTransport: () => transport, readStdin: async () => "from stdin\n" });
 
     expect(result.data).toEqual({ id: "1", text: "from stdin" });
   });
@@ -65,10 +53,7 @@ describe("runPost", () => {
       },
     });
 
-    const result = await runPost(["hello", "--dry-run"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runPost(["hello", "--dry-run"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ dryRun: true, wouldSend: { text: "hello" } });
     expect(called).toBe(false);
@@ -76,9 +61,8 @@ describe("runPost", () => {
 
   test("--dry-run doesn't require auth to be configured", async () => {
     const result = await runPost(["hello", "--dry-run"], {
-      resolveAuth: () => null,
-      transportFactory: () => {
-        throw new Error("should not be called");
+      getTransport: () => {
+        throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
       },
     });
 
@@ -88,21 +72,15 @@ describe("runPost", () => {
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runPost(["hello"], {
-        resolveAuth: () => null,
-        transportFactory: () => {
-          throw new Error("should not be called");
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
       }),
     ).rejects.toThrow(FinchError);
   });
 
   test("rejects text containing disallowed control characters", async () => {
-    await expect(
-      runPost(["hello\x1Bworld"], {
-        resolveAuth: () => fakeAuth,
-        transportFactory: () => fakeTransport({}),
-      }),
-    ).rejects.toThrow(FinchError);
+    await expect(runPost(["hello\x1Bworld"], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
   test("trims whitespace from a positional text arg, like --file/stdin", async () => {
@@ -110,20 +88,12 @@ describe("runPost", () => {
       createTweet: async (text) => ({ id: "1", text }),
     });
 
-    const result = await runPost(["  hello world  "], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runPost(["  hello world  "], { getTransport: () => transport });
 
     expect(result.data).toEqual({ id: "1", text: "hello world" });
   });
 
   test("rejects a whitespace-only positional arg instead of posting blank text", async () => {
-    await expect(
-      runPost(["   "], {
-        resolveAuth: () => fakeAuth,
-        transportFactory: () => fakeTransport({}),
-      }),
-    ).rejects.toThrow(FinchError);
+    await expect(runPost(["   "], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 });

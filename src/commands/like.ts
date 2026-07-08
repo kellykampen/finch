@@ -1,5 +1,4 @@
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport } from "../core/transport";
+import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { extractTweetId } from "../core/ids";
 import { parseArgs } from "../core/args";
@@ -15,8 +14,7 @@ export interface LikeDryRunResult {
 }
 
 export interface LikeDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
 }
 
 /** `finch like <id-or-url>`: likes a post. */
@@ -24,8 +22,7 @@ export async function runLike(
   argv: string[],
   deps: LikeDeps = {},
 ): Promise<{ data: LikeResult | LikeDryRunResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
   const idOrUrl = positionals[0];
@@ -41,12 +38,7 @@ export async function runLike(
     };
   }
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-
-  const transport = transportFactory(auth);
+  const transport = getTransport();
   const me = await transport.getMe();
   await transport.like(me.id, tweetId);
   return { data: { liked: true, tweet_id: tweetId }, human: `Liked ${tweetId}` };

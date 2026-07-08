@@ -45,7 +45,7 @@ describe("COMMAND_SCHEMAS", () => {
 
   test("never includes secret auth field values", () => {
     const serialized = JSON.stringify(COMMAND_SCHEMAS);
-    expect(serialized).not.toMatch(/apiKeySecret":\s*"(?!string)/);
+    expect(serialized).not.toMatch(/(clientId|accessToken|refreshToken)":\s*"(?!string)/);
   });
 });
 

@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolveAuthConfig, type FinchAuthConfig } from "../core/config";
-import { createByokTransport, type XTransport } from "../core/transport";
+import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { validatePostText } from "../core/validation";
 import { parseArgs } from "../core/args";
@@ -16,8 +15,7 @@ export interface ThreadDryRunResult {
 }
 
 export interface ThreadDeps {
-  resolveAuth?: () => FinchAuthConfig | null;
-  transportFactory?: (auth: FinchAuthConfig) => XTransport;
+  getTransport?: () => XTransport;
 }
 
 /**
@@ -32,8 +30,7 @@ export async function runThread(
   argv: string[],
   deps: ThreadDeps = {},
 ): Promise<{ data: ThreadResult | ThreadDryRunResult; human: string }> {
-  const resolveAuth = deps.resolveAuth ?? resolveAuthConfig;
-  const transportFactory = deps.transportFactory ?? createByokTransport;
+  const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const { values, bools, positionals } = parseArgs(argv, {
     valueFlags: ["--file"],
@@ -53,11 +50,7 @@ export async function runThread(
     };
   }
 
-  const auth = resolveAuth();
-  if (!auth) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
-  const transport = transportFactory(auth);
+  const transport = getTransport();
 
   const ids: string[] = [];
   let previousId: string | undefined;

@@ -3,8 +3,6 @@ import { runUnfollow } from "./unfollow";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
-const fakeAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
-
 describe("runUnfollow", () => {
   test("resolves the username to a user id before unfollowing", async () => {
     let capturedUsername: string | undefined;
@@ -21,10 +19,7 @@ describe("runUnfollow", () => {
       },
     });
 
-    const result = await runUnfollow(["someuser"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runUnfollow(["someuser"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ following: false, username: "someuser" });
     expect(capturedUsername).toBe("someuser");
@@ -44,18 +39,14 @@ describe("runUnfollow", () => {
       unfollow: async () => ({ following: false }),
     });
 
-    const result = await runUnfollow(["@someuser"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => transport,
-    });
+    const result = await runUnfollow(["@someuser"], { getTransport: () => transport });
 
     expect(result.data).toEqual({ following: false, username: "someuser" });
   });
 
   test("--dry-run reports wouldSend without calling the transport", async () => {
     const result = await runUnfollow(["someuser", "--dry-run"], {
-      resolveAuth: () => fakeAuth,
-      transportFactory: () => {
+      getTransport: () => {
         throw new Error("should not be called");
       },
     });
@@ -64,17 +55,14 @@ describe("runUnfollow", () => {
   });
 
   test("throws USAGE_ERROR when the username argument is missing", async () => {
-    await expect(
-      runUnfollow([], { resolveAuth: () => fakeAuth, transportFactory: () => fakeTransport({}) }),
-    ).rejects.toThrow(FinchError);
+    await expect(runUnfollow([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
   });
 
   test("throws AUTH_ERROR when Finch is not configured", async () => {
     await expect(
       runUnfollow(["someuser"], {
-        resolveAuth: () => null,
-        transportFactory: () => {
-          throw new Error("should not be called");
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
       }),
     ).rejects.toThrow(FinchError);
