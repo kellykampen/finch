@@ -180,6 +180,23 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ id: string }",
   },
   {
+    name: "article publish",
+    description: "Publish an existing article draft as a public post.",
+    flags: ["--json"],
+    positionals: ["<draft_id>"],
+    endpoint: "POST /2/articles/{id}/publish",
+    dataShape: "{ post_id: string, url: string }",
+  },
+  {
+    name: "article post",
+    description: "Create and publish an article from a markdown file in one step.",
+    flags: ["--json", "--title <title>", "--cover <path>"],
+    positionals: ["<markdown-file-path>"],
+    endpoint:
+      "POST /2/articles/draft { title, content_state } (+ POST /2/media/upload for --cover) then POST /2/articles/{id}/publish",
+    dataShape: "{ post_id: string, url: string }",
+  },
+  {
     name: "bookmark list",
     description: "Fetch the authenticated user's bookmarked posts, optionally scoped to a bookmark folder.",
     flags: ["--json", "-n <count>", "--count <count>", "--folder <id>"],

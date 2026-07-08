@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runArticleDraft } from "./article";
+import { runArticleDraft, runArticlePublish, runArticlePost } from "./article";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 
@@ -119,5 +119,128 @@ describe("runArticleDraft", () => {
     }
 
     await expect(runArticleDraft([], { getTransport: () => transport })).rejects.toThrow(FinchError);
+  });
+});
+
+describe("runArticlePublish", () => {
+  test("publishes a draft and returns the post URL", async () => {
+    const transport = fakeTransport({
+      publishArticleDraft: async (draftId) => {
+        expect(draftId).toBe("draft-123");
+        return { post_id: "9876543210" };
+      },
+    });
+
+    const result = await runArticlePublish(["draft-123"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({
+      post_id: "9876543210",
+      url: "https://x.com/i/web/status/9876543210",
+    });
+    expect(result.human).toBe("Published article as https://x.com/i/web/status/9876543210");
+  });
+
+  test("throws USAGE_ERROR when draft_id is missing", async () => {
+    const transport = fakeTransport({
+      publishArticleDraft: async () => ({ post_id: "x" }),
+    });
+
+    await expect(runArticlePublish([], { getTransport: () => transport })).rejects.toThrow(FinchError);
+    try {
+      await runArticlePublish([], { getTransport: () => transport });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("requires <draft_id>");
+    }
+  });
+});
+
+describe("runArticlePost", () => {
+  test("creates a draft from markdown and publishes it, returning the post URL", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-article-post-test-"));
+    try {
+      const path = join(dir, "article.md");
+      writeFileSync(path, "# Published\n\nVia post command.\n");
+
+      let createdWith: { title?: string; contentState?: object; coverMediaId?: string } = {};
+      const transport = fakeTransport({
+        createArticleDraft: async (title, contentState, coverMediaId) => {
+          createdWith = { title, contentState, coverMediaId };
+          return { id: "draft-post-1" };
+        },
+        publishArticleDraft: async (draftId) => {
+          expect(draftId).toBe("draft-post-1");
+          return { post_id: "1122334455" };
+        },
+      });
+
+      const result = await runArticlePost([path, "--title", "My Post"], { getTransport: () => transport });
+
+      expect(result.data).toEqual({
+        post_id: "1122334455",
+        url: "https://x.com/i/web/status/1122334455",
+      });
+      expect(result.human).toBe("Published article as https://x.com/i/web/status/1122334455");
+      expect(createdWith.title).toBe("My Post");
+      expect(createdWith.coverMediaId).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("uploads a cover image and flows the media id through to the draft", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-article-post-cover-test-"));
+    try {
+      const mdPath = join(dir, "article.md");
+      const coverPath = join(dir, "cover.png");
+      writeFileSync(mdPath, "Covered article\n");
+      writeFileSync(coverPath, "fake-image-data");
+
+      const uploadedPaths: string[] = [];
+      let createdWith: { title?: string; contentState?: object; coverMediaId?: string } = {};
+      const transport = fakeTransport({
+        uploadImage: async (path) => {
+          uploadedPaths.push(path);
+          return { media_id: `id-for-${path}` };
+        },
+        createArticleDraft: async (title, contentState, coverMediaId) => {
+          createdWith = { title, contentState, coverMediaId };
+          return { id: "draft-post-cover" };
+        },
+        publishArticleDraft: async () => ({ post_id: "5566778899" }),
+      });
+
+      const result = await runArticlePost([mdPath, "--title", "Covered Post", "--cover", coverPath], {
+        getTransport: () => transport,
+      });
+
+      expect(result.data.post_id).toBe("5566778899");
+      expect(uploadedPaths).toEqual([coverPath]);
+      expect(createdWith.title).toBe("Covered Post");
+      expect(createdWith.coverMediaId).toBe(`id-for-${coverPath}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("throws USAGE_ERROR when markdown file or --title is missing", async () => {
+    const transport = fakeTransport({
+      createArticleDraft: async () => ({ id: "x" }),
+      publishArticleDraft: async () => ({ post_id: "x" }),
+    });
+
+    await expect(runArticlePost([], { getTransport: () => transport })).rejects.toThrow(FinchError);
+    try {
+      await runArticlePost([], { getTransport: () => transport });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("requires <markdown-file> and --title <title>");
+    }
+
+    await expect(runArticlePost(["--title", "Title Only"], { getTransport: () => transport })).rejects.toThrow(
+      FinchError,
+    );
   });
 });
