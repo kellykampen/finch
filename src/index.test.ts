@@ -154,6 +154,6 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(exitCode).toBe(0);
     const envelope = JSON.parse(stdout);
     expect(envelope.ok).toBe(true);
-    expect(envelope.data).toEqual({ dryRun: true, wouldSend: { text: "--json", media: [] } });
+    expect(envelope.data).toEqual({ dryRun: true, wouldSend: { text: "--json", media: [], alt: [] } });
   });
 });

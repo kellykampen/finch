@@ -59,7 +59,7 @@ describe("createTools", () => {
 
     const result = await toolByName(tools, "post_tweet").handler({ text: "hello", dryRun: true });
 
-    expect(result.structuredContent).toEqual({ dryRun: true, wouldSend: { text: "hello", media: [] } });
+    expect(result.structuredContent).toEqual({ dryRun: true, wouldSend: { text: "hello", media: [], alt: [] } });
   });
 
   test("a FinchError from the wrapped command surfaces as an MCP tool error with {code, message, detail}", async () => {

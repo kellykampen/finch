@@ -73,6 +73,9 @@ const unusedMediaClient = {
   upload: async () => {
     throw new Error("upload not stubbed for this test");
   },
+  createMetadata: async () => {
+    throw new Error("createMetadata not stubbed for this test");
+  },
 };
 
 describe("ByokTransport.getMe", () => {
@@ -353,6 +356,7 @@ describe("ByokTransport.uploadImage", () => {
 
       let capturedBody: unknown;
       const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
         upload: async (options) => {
           capturedBody = options.body;
           return { data: { id: "media-123", media_key: "3_media-123" } };
@@ -405,6 +409,7 @@ describe("ByokTransport.uploadImage", () => {
       writeFileSync(path, Buffer.from("fake-image-bytes"));
 
       const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
         upload: async () => {
           throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), null);
         },
@@ -429,6 +434,7 @@ describe("ByokTransport.uploadImage", () => {
       writeFileSync(path, Buffer.from("fake-image-bytes"));
 
       const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
         upload: async () => ({ errors: [{ detail: "media rejected" }] }),
       });
 
@@ -442,6 +448,59 @@ describe("ByokTransport.uploadImage", () => {
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("ByokTransport.setMediaAltText", () => {
+  test("sends alt text through the SDK metadata endpoint", async () => {
+    let capturedBody: unknown;
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+      ...unusedMediaClient,
+      createMetadata: async (options) => {
+        capturedBody = options.body;
+        return {};
+      },
+    });
+
+    await transport.setMediaAltText("media-123", "A useful description");
+
+    expect(capturedBody).toEqual({
+      mediaId: "media-123",
+      altText: { text: "A useful description" },
+    });
+  });
+
+  test("throws CLIENT_ERROR when the metadata response has errors", async () => {
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+      ...unusedMediaClient,
+      createMetadata: async () => ({ errors: [{ detail: "metadata rejected" }] }),
+    });
+
+    await expect(transport.setMediaAltText("media-123", "bad")).rejects.toThrow(FinchError);
+    try {
+      await transport.setMediaAltText("media-123", "bad");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      expect((err as FinchError).message).toBe("X API did not confirm the media metadata");
+    }
+  });
+
+  test("maps a 403 ApiError to AUTH_ERROR", async () => {
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+      ...unusedMediaClient,
+      createMetadata: async () => {
+        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), null);
+      },
+    });
+
+    await expect(transport.setMediaAltText("media-123", "description")).rejects.toThrow(FinchError);
+    try {
+      await transport.setMediaAltText("media-123", "description");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
     }
   });
 });
@@ -702,6 +761,7 @@ describe("ByokTransport.addBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.addBookmark("42", "999");
@@ -717,6 +777,7 @@ describe("ByokTransport.addBookmark", () => {
         createBookmark: async () => ({ data: {} }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     expect(await transport.addBookmark("42", "999")).toEqual({ bookmarked: true });
@@ -729,6 +790,7 @@ describe("ByokTransport.addBookmark", () => {
         createBookmark: async () => ({ errors: [{ detail: "not found" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -755,6 +817,7 @@ describe("ByokTransport.addBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -782,6 +845,7 @@ describe("ByokTransport.removeBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     const result = await transport.removeBookmark("42", "999");
@@ -797,6 +861,7 @@ describe("ByokTransport.removeBookmark", () => {
         deleteBookmark: async () => ({ data: {} }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     expect(await transport.removeBookmark("42", "999")).toEqual({ bookmarked: false });
@@ -809,6 +874,7 @@ describe("ByokTransport.removeBookmark", () => {
         deleteBookmark: async () => ({ errors: [{ detail: "not found" }] }),
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
@@ -831,6 +897,7 @@ describe("ByokTransport.removeBookmark", () => {
         },
       },
       unusedPostsClient,
+      unusedMediaClient,
     );
 
     try {
