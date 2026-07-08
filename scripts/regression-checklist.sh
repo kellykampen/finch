@@ -14,7 +14,7 @@
 #   0  all checks passed
 #   1  one or more checks failed
 
-set -uo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -62,7 +62,7 @@ check_2_tests() {
 # ---------------------------------------------------------------------------
 check_3_build() {
   rm -f "$FINCH_BIN"
-  bun run build
+  bun run build || return 1
   test -x "$FINCH_BIN"
 }
 
@@ -71,8 +71,10 @@ check_3_build() {
 # ---------------------------------------------------------------------------
 check_4_schema() {
   local output
-  output="$("$FINCH_BIN" schema --json)"
-  [ $? -eq 0 ] || return 1
+  if ! output="$("$FINCH_BIN" schema --json)"; then
+    echo "schema command failed" >&2
+    return 1
+  fi
   node -e '
     const response = JSON.parse(process.argv[1]);
     if (!response.ok) throw new Error("schema returned ok=false");
@@ -99,8 +101,10 @@ check_5_auth_status_unconfigured() {
     trap 'rm -rf "$SANDBOX_HOME"' EXIT
 
     local output rc
+    set +e
     output="$(HOME="$SANDBOX_HOME" "$FINCH_BIN" auth status --json)"
     rc=$?
+    set -e
     [ "$rc" -eq 0 ] || { echo "expected exit 0, got $rc" >&2; exit 1; }
 
     node -e '
@@ -141,7 +145,7 @@ JSON
 
     # Trigger a config rewrite through the binary so writeOAuth2Config()
     # applies its advertised directory/file modes.
-    "$FINCH_BIN" config set defaults.json true >/dev/null
+    "$FINCH_BIN" config set defaults.json true >/dev/null || exit 1
 
     local file_perms dir_perms
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -167,8 +171,10 @@ check_7_json_output_shape() {
     export HOME="$SANDBOX_HOME"
 
     local output rc
+    set +e
     output="$("$FINCH_BIN" post --dry-run --json -- 'Regression test post')"
     rc=$?
+    set -e
     [ "$rc" -eq 0 ] || { echo "expected exit 0, got $rc" >&2; exit 1; }
 
     node -e '
@@ -322,7 +328,7 @@ JSON
       if (value === full) throw new Error("value leaks full secret: " + value);
       if (!value.includes("*")) throw new Error("value is not masked: " + value);
       if (!value.endsWith(full.slice(-4))) throw new Error("value does not preserve last 4 chars: " + value);
-    ' "$output" "$CLIENT_ID"
+    ' "$output" "$CLIENT_ID" || exit 1
 
     # With explicit --json.
     output="$("$FINCH_BIN" config get auth.clientId --json)"
@@ -336,17 +342,19 @@ JSON
       if (value === full) throw new Error("value leaks full secret: " + value);
       if (!value.includes("*")) throw new Error("value is not masked: " + value);
       if (!value.endsWith(full.slice(-4))) throw new Error("value does not preserve last 4 chars: " + value);
-    ' "$output" "$CLIENT_ID"
+    ' "$output" "$CLIENT_ID" || exit 1
 
     # config set on an auth.* key must exit 2 (USAGE_ERROR).
+    set +e
     output="$("$FINCH_BIN" config set auth.clientId newvalue --json 2>&1)"
     rc=$?
+    set -e
     [ "$rc" -eq 2 ] || { echo "config set auth.* exit code $rc, expected 2" >&2; exit 1; }
     node -e '
       const response = JSON.parse(process.argv[1]);
       if (response.ok) throw new Error("config set auth.* returned ok=true");
       if (response.error.code !== "USAGE_ERROR") throw new Error("expected USAGE_ERROR, got " + response.error.code);
-    ' "$output"
+    ' "$output" || exit 1
   )
 }
 
