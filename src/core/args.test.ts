@@ -63,7 +63,15 @@ describe("resolveCount", () => {
     expect(() => resolveCount("abc")).toThrow(FinchError);
   });
 
-  test("throws USAGE_ERROR for a value below 1", () => {
-    expect(() => resolveCount("0")).toThrow(FinchError);
+  test("uses a custom default when provided and raw is unset", async () => {
+    expect(resolveCount(undefined, 7)).toBe(7);
+  });
+
+  test("clamps a custom default to the API tier max", async () => {
+    expect(resolveCount(undefined, 500)).toBe(100);
+  });
+
+  test("ignores the custom default when raw is provided", async () => {
+    expect(resolveCount("25", 7)).toBe(25);
   });
 });

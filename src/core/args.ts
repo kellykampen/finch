@@ -51,8 +51,8 @@ const MAX_COUNT = 100;
 // Default 10, capped at the X API v2 list-endpoint hard cap of 100/page —
 // PLAN.md calls this an "API-tier-aware max", not a hard usage error, so an
 // over-large -n is silently clamped rather than rejected.
-export function resolveCount(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULT_COUNT;
+export function resolveCount(raw: string | undefined, defaultCount: number = DEFAULT_COUNT): number {
+  if (raw === undefined) return Math.min(defaultCount, MAX_COUNT);
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) {
     throw new FinchError("USAGE_ERROR", `-n must be a positive integer, got: ${raw}`);

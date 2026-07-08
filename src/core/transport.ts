@@ -57,6 +57,7 @@ export interface XTransport {
   searchRecent(query: string, maxResults: number): Promise<FinchTweet[]>;
   userTweets(userId: string, maxResults: number): Promise<FinchTweet[]>;
   homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]>;
+  listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
   unlike(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -121,6 +122,7 @@ interface UsersClientLike {
   getByUsername(username: string, options?: { userFields?: string[] }): Promise<ItemResult<UserLike>>;
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  getBookmarks(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   likePost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
   unlikePost(id: string, tweetId: string): Promise<EngageActionResult>;
   repostPost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
@@ -231,6 +233,19 @@ export class ByokTransport implements XTransport {
   async homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]> {
     try {
       const res = await this.usersClient.getTimeline(userId, {
+        maxResults,
+        tweetFields: TWEET_FIELDS,
+      });
+      return (res.data ?? []).map(shapeTweet);
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
+
+  async listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]> {
+    try {
+      const res = await this.usersClient.getBookmarks(userId, {
         maxResults,
         tweetFields: TWEET_FIELDS,
       });
@@ -435,6 +450,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]> {
     const t = await this.ensureFreshToken();
     return t.homeTimeline(userId, maxResults);
+  }
+
+  async listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]> {
+    const t = await this.ensureFreshToken();
+    return t.listBookmarks(userId, maxResults);
   }
 
   async getUserByUsername(username: string): Promise<FinchUserProfile> {

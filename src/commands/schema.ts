@@ -160,6 +160,14 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ deleted: true, tweet_id: string }",
   },
   {
+    name: "bookmark list",
+    description: "Fetch the authenticated user's bookmarked posts.",
+    flags: ["--json", "-n <count>"],
+    positionals: [],
+    endpoint: "GET /2/users/:id/bookmarks",
+    dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
+  },
+  {
     name: "config get",
     description:
       "Print one config value. Masks auth.* fields to all-but-last-4 characters, whether or not --json is set.",

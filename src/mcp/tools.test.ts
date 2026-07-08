@@ -8,6 +8,7 @@ const EXPECTED_TOOL_NAMES = [
   "reply_tweet",
   "post_thread",
   "get_timeline",
+  "list_bookmarks",
   "search_tweets",
   "get_user_posts",
   "get_user_profile",

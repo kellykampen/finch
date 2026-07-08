@@ -20,6 +20,7 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     searchRecent: notImplemented("searchRecent"),
     userTweets: notImplemented("userTweets"),
     homeTimeline: notImplemented("homeTimeline"),
+    listBookmarks: notImplemented("listBookmarks"),
     getUserByUsername: notImplemented("getUserByUsername"),
     like: notImplemented("like"),
     unlike: notImplemented("unlike"),

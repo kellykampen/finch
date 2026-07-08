@@ -18,6 +18,7 @@ import { runDelete } from "../commands/delete";
 import { runFollow } from "../commands/follow";
 import { runUnfollow } from "../commands/unfollow";
 import { runWhoami } from "../commands/whoami";
+import { runBookmarkList } from "../commands/bookmark";
 
 export interface McpToolDeps {
   getTransport?: () => XTransport;
@@ -112,6 +113,12 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       description: "The authenticated user's home reverse-chronological timeline (maps to `finch timeline`).",
       inputSchema: { count: z.number().int().positive().optional() },
       handler: (args) => runTool(() => runTimeline(buildArgv([], { count: args.count as number }), deps)),
+    },
+    {
+      name: "list_bookmarks",
+      description: "Fetch the authenticated user's bookmarked posts (maps to `finch bookmark list`).",
+      inputSchema: { count: z.number().int().positive().optional() },
+      handler: (args) => runTool(() => runBookmarkList(buildArgv([], { count: args.count as number }), deps)),
     },
     {
       name: "search_tweets",
