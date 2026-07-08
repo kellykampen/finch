@@ -72,7 +72,7 @@ export interface XTransport {
   removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
   listBookmarkFolders(userId: string): Promise<FinchBookmarkFolder[]>;
   createBookmarkFolder(userId: string, name: string): Promise<FinchBookmarkFolder>;
-  listBookmarksInFolder(userId: string, folderId: string): Promise<FinchTweet[]>;
+  listBookmarksInFolder(userId: string, folderId: string, maxResults: number): Promise<FinchTweet[]>;
   addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -147,7 +147,7 @@ interface UsersClientLike {
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarks(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
-  getBookmarksByFolderId(id: string, folderId: string): Promise<ListResult<TweetLike>>;
+  getBookmarksByFolderId(id: string, folderId: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarkFolders(
     id: string,
     options?: {
@@ -406,9 +406,12 @@ export class ByokTransport implements XTransport {
     }
   }
 
-  async listBookmarksInFolder(userId: string, folderId: string): Promise<FinchTweet[]> {
+  async listBookmarksInFolder(userId: string, folderId: string, maxResults: number): Promise<FinchTweet[]> {
     try {
-      const res = await this.usersClient.getBookmarksByFolderId(userId, folderId);
+      const res = await this.usersClient.getBookmarksByFolderId(userId, folderId, {
+        maxResults,
+        tweetFields: TWEET_FIELDS,
+      });
       return (res.data ?? []).map(shapeTweet);
     } catch (err) {
       if (err instanceof FinchError) throw err;
@@ -1010,9 +1013,9 @@ class RefreshingOAuth2Transport implements XTransport {
     return t.createBookmarkFolder(userId, name);
   }
 
-  async listBookmarksInFolder(userId: string, folderId: string): Promise<FinchTweet[]> {
+  async listBookmarksInFolder(userId: string, folderId: string, maxResults: number): Promise<FinchTweet[]> {
     const t = await this.ensureFreshToken();
-    return t.listBookmarksInFolder(userId, folderId);
+    return t.listBookmarksInFolder(userId, folderId, maxResults);
   }
 
   async addBookmarkToFolder(userId: string, folderId: string, tweetId: string): Promise<BookmarkStatus> {

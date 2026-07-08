@@ -124,11 +124,13 @@ describe("runBookmarkList", () => {
   test("uses folder-scoped list when --folder is provided", async () => {
     let capturedUserId: string | undefined;
     let capturedFolderId: string | undefined;
+    let capturedCount: number | undefined;
     const transport = fakeTransport({
       getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
-      listBookmarksInFolder: async (userId, folderId) => {
+      listBookmarksInFolder: async (userId, folderId, count) => {
         capturedUserId = userId;
         capturedFolderId = folderId;
+        capturedCount = count;
         return [post];
       },
     });
@@ -141,6 +143,25 @@ describe("runBookmarkList", () => {
     expect(result.data).toEqual({ posts: [post] });
     expect(capturedUserId).toBe("42");
     expect(capturedFolderId).toBe("folder-123");
+    expect(capturedCount).toBe(10);
+  });
+
+  test("passes -n through on folder-scoped list", async () => {
+    let capturedCount: number | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      listBookmarksInFolder: async (_userId, _folderId, count) => {
+        capturedCount = count;
+        return [];
+      },
+    });
+
+    await runBookmarkList(["--folder", "folder-123", "-n", "25"], {
+      getTransport: () => transport,
+      getConfig: () => fakeConfig(10),
+    });
+
+    expect(capturedCount).toBe(25);
   });
 
   test("throws AUTH_ERROR when Finch is not configured", async () => {
@@ -264,7 +285,7 @@ describe("runBookmarkAdd", () => {
       },
     });
 
-    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999" } });
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999", folder_id: "folder-123" } });
     expect(result.human).toBe("Would bookmark 999 in folder folder-123");
   });
 });

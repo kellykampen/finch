@@ -1258,13 +1258,32 @@ describe("ByokTransport.listBookmarksInFolder", () => {
       unusedMediaClient,
     );
 
-    const result = await transport.listBookmarksInFolder("42", "folder-123");
+    const result = await transport.listBookmarksInFolder("42", "folder-123", 10);
 
     expect(result).toEqual([
       { id: "1", text: "saved in folder", author_id: "7", created_at: "2026-01-01T00:00:00.000Z" },
       { id: "2", text: "minimal", author_id: null, created_at: null },
     ]);
-    expect(capturedArgs).toEqual(["42", "folder-123"]);
+    expect(capturedArgs).toEqual(["42", "folder-123", { maxResults: 10, tweetFields: ["author_id", "created_at"] }]);
+  });
+
+  test("passes maxResults through to the SDK", async () => {
+    let capturedOptions: unknown;
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarksByFolderId: async (_id, _folderId, options) => {
+          capturedOptions = options;
+          return { data: [] };
+        },
+      },
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    await transport.listBookmarksInFolder("42", "folder-123", 25);
+
+    expect(capturedOptions).toEqual({ maxResults: 25, tweetFields: ["author_id", "created_at"] });
   });
 
   test("maps a Premium-gated 403 to a clear CLIENT_ERROR", async () => {
@@ -1282,7 +1301,7 @@ describe("ByokTransport.listBookmarksInFolder", () => {
     );
 
     try {
-      await transport.listBookmarksInFolder("42", "folder-123");
+      await transport.listBookmarksInFolder("42", "folder-123", 10);
       throw new Error("expected listBookmarksInFolder to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
@@ -1303,9 +1322,9 @@ describe("ByokTransport.listBookmarksInFolder", () => {
       unusedMediaClient,
     );
 
-    await expect(transport.listBookmarksInFolder("42", "folder-123")).rejects.toThrow(FinchError);
+    await expect(transport.listBookmarksInFolder("42", "folder-123", 10)).rejects.toThrow(FinchError);
     try {
-      await transport.listBookmarksInFolder("42", "folder-123");
+      await transport.listBookmarksInFolder("42", "folder-123", 10);
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("AUTH_ERROR");

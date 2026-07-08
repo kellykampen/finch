@@ -37,7 +37,7 @@ export async function runBookmarkList(
   const folderId = values["--folder"];
 
   const posts = folderId
-    ? await transport.listBookmarksInFolder(me.id, folderId)
+    ? await transport.listBookmarksInFolder(me.id, folderId, count)
     : await transport.listBookmarks(me.id, count);
   return { data: { posts }, human: formatPosts(posts) };
 }
@@ -49,7 +49,7 @@ export interface BookmarkStatusResult {
 
 export interface BookmarkDryRunResult {
   dryRun: true;
-  wouldSend: { tweet_id: string };
+  wouldSend: { tweet_id: string; folder_id?: string };
 }
 
 export interface BookmarkAddDeps {
@@ -76,7 +76,7 @@ export async function runBookmarkAdd(
 
   if (bools["--dry-run"]) {
     return {
-      data: { dryRun: true, wouldSend: { tweet_id: tweetId } },
+      data: { dryRun: true, wouldSend: { tweet_id: tweetId, ...(folderId && { folder_id: folderId }) } },
       human: folderId ? `Would bookmark ${tweetId} in folder ${folderId}` : `Would bookmark ${tweetId}`,
     };
   }
