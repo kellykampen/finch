@@ -17,6 +17,10 @@ function convert(markdown: string): ContentState {
 }
 
 describe("markdownToContentState", () => {
+  test("uses deterministic default block keys across separate calls", () => {
+    expect(markdownToContentState("some text")).toEqual(markdownToContentState("some text"));
+  });
+
   test("converts headings and paragraph blocks", () => {
     expect(convert("# Title\n\n### Section\n\nPlain text.")).toEqual({
       blocks: [
@@ -62,6 +66,38 @@ describe("markdownToContentState", () => {
             { offset: 14, length: 6, style: "ITALIC" },
             { offset: 26, length: 4, style: "STRIKETHROUGH" },
           ],
+          entityRanges: [],
+        },
+      ],
+      entities: {},
+    });
+  });
+
+  test("preserves intra-word underscores as literal text", () => {
+    expect(convert("Check my_variable_name here")).toEqual({
+      blocks: [
+        {
+          key: "a",
+          text: "Check my_variable_name here",
+          type: "unstyled",
+          depth: 0,
+          inlineStyleRanges: [],
+          entityRanges: [],
+        },
+      ],
+      entities: {},
+    });
+  });
+
+  test("keeps underscore italics at word boundaries", () => {
+    expect(convert("This is _really_ important")).toEqual({
+      blocks: [
+        {
+          key: "a",
+          text: "This is really important",
+          type: "unstyled",
+          depth: 0,
+          inlineStyleRanges: [{ offset: 8, length: 6, style: "ITALIC" }],
           entityRanges: [],
         },
       ],

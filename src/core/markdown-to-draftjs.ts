@@ -67,7 +67,7 @@ export interface ContentState {
 }
 
 export interface MarkdownToContentStateOptions {
-  /** Optional key generator. Defaults to random 5-char alphanumeric strings. */
+  /** Optional key generator. Defaults to deterministic per-call block_N keys. */
   generateKey?: () => string;
 }
 
@@ -99,8 +99,13 @@ const HEADER_TYPES: Record<number, DraftBlockType> = {
   6: "header-six",
 };
 
-function defaultGenerateKey(): string {
-  return Math.random().toString(36).slice(2, 7);
+function createDefaultGenerateKey(): () => string {
+  let keyIndex = 0;
+  return () => {
+    const key = `block_${keyIndex}`;
+    keyIndex += 1;
+    return key;
+  };
 }
 
 function capture(match: RegExpMatchArray, index: number): string {
@@ -115,6 +120,16 @@ function canStartEntity(markup: string, index: number): boolean {
   if (index === 0) return true;
   const prev = markup.charAt(index - 1);
   return /[\s([{<>"'.,;:!?]/.test(prev);
+}
+
+function isAlphanumeric(char: string): boolean {
+  return /^[A-Za-z0-9]$/.test(char);
+}
+
+function canToggleUnderscoreEmphasis(markup: string, index: number): boolean {
+  const prev = markup.charAt(index - 1);
+  const next = markup.charAt(index + 1);
+  return !(isAlphanumeric(prev) && isAlphanumeric(next));
 }
 
 function parseInline(
@@ -203,7 +218,7 @@ function parseInline(
       continue;
     }
 
-    if (markup[i] === "*" || markup[i] === "_") {
+    if (markup[i] === "*" || (markup[i] === "_" && canToggleUnderscoreEmphasis(markup, i))) {
       if (activeStyles.has("ITALIC")) activeStyles.delete("ITALIC");
       else activeStyles.add("ITALIC");
       i += 1;
@@ -448,7 +463,7 @@ function buildBlocks(
  * Convert a markdown string into a DraftJS-compatible content_state object.
  */
 export function markdownToContentState(markdown: string, options: MarkdownToContentStateOptions = {}): ContentState {
-  const getKey = options.generateKey ?? defaultGenerateKey;
+  const getKey = options.generateKey ?? createDefaultGenerateKey();
   const normalized = markdown.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const segments = splitByCodeFences(normalized);
   const { blocks, entities } = buildBlocks(segments, getKey);
