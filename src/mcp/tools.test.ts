@@ -215,4 +215,94 @@ describe("createTools", () => {
 
     expect(result.structuredContent).toEqual({ id: "1", username: "kelly", name: "Kelly" });
   });
+
+  test("post_tweet passes media paths and alt text through to the underlying command", async () => {
+    const tools = createTools({
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await toolByName(tools, "post_tweet").handler({
+      text: "hello",
+      dryRun: true,
+      media: [{ path: "a.png", alt: "First image" }, { path: "b.png" }, { path: "c.png", alt: "Third image" }],
+    });
+
+    expect(result.structuredContent).toEqual({
+      dryRun: true,
+      wouldSend: {
+        text: "hello",
+        media: ["a.png", "b.png", "c.png"],
+        alt: ["First image", undefined, "Third image"],
+      },
+    });
+  });
+
+  test("post_thread passes per-tweet media paths and alt text through to the underlying command", async () => {
+    const tools = createTools({
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await toolByName(tools, "post_thread").handler({
+      texts: ["first tweet", "second tweet", "third tweet"],
+      dryRun: true,
+      media: [
+        { tweetIndex: 0, path: "a.png", alt: "First image" },
+        { tweetIndex: 0, path: "b.png" },
+        { tweetIndex: 2, path: "c.png", alt: "Third tweet image" },
+      ],
+    });
+
+    expect(result.structuredContent).toEqual({
+      dryRun: true,
+      wouldSend: [
+        { text: "first tweet", media: ["a.png", "b.png"], alt: ["First image", undefined] },
+        { text: "second tweet", media: [], alt: [] },
+        { text: "third tweet", media: ["c.png"], alt: ["Third tweet image"] },
+      ],
+    });
+  });
+
+  test("post_tweet sends a text value that literally equals '--media' as real text, not the flag", async () => {
+    const tools = createTools({
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await toolByName(tools, "post_tweet").handler({
+      text: "--media",
+      dryRun: true,
+      media: [{ path: "a.png" }],
+    });
+
+    expect(result.structuredContent).toEqual({
+      dryRun: true,
+      wouldSend: { text: "--media", media: ["a.png"], alt: [undefined] },
+    });
+  });
+
+  test("post_thread sends text values that equal '--media' or contain a colon as real thread posts, not flags", async () => {
+    const tools = createTools({
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await toolByName(tools, "post_thread").handler({
+      texts: ["--media", "0:something"],
+      dryRun: true,
+    });
+
+    expect(result.structuredContent).toEqual({
+      dryRun: true,
+      wouldSend: [
+        { text: "--media", media: [], alt: [] },
+        { text: "0:something", media: [], alt: [] },
+      ],
+    });
+  });
 });
