@@ -14,6 +14,7 @@ import { runLike } from "../commands/like";
 import { runUnlike } from "../commands/unlike";
 import { runRepost } from "../commands/repost";
 import { runUnrepost } from "../commands/unrepost";
+import { runDelete } from "../commands/delete";
 import { runFollow } from "../commands/follow";
 import { runUnfollow } from "../commands/unfollow";
 import { runWhoami } from "../commands/whoami";
@@ -165,6 +166,13 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
       handler: (args) =>
         runTool(() => runUnrepost(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
+    },
+    {
+      name: "delete_tweet",
+      description: "Delete a post (maps to `finch delete`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() => runDelete(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "follow_user",

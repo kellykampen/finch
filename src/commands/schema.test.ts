@@ -19,6 +19,7 @@ const ALL_COMMANDS = [
   "unrepost",
   "follow",
   "unfollow",
+  "delete",
   "config get",
   "config set",
   "config path",

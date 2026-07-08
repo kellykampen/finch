@@ -27,6 +27,7 @@ export function fakeTransport(overrides: Partial<XTransport>): XTransport {
     unretweet: notImplemented("unretweet"),
     follow: notImplemented("follow"),
     unfollow: notImplemented("unfollow"),
+    deleteTweet: notImplemented("deleteTweet"),
     ...overrides,
   };
 }

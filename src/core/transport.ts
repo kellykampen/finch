@@ -41,6 +41,10 @@ export interface FollowStatus {
   following: boolean;
 }
 
+export interface DeleteStatus {
+  deleted: boolean;
+}
+
 /**
  * Every core command function depends on this interface, never on the SDK
  * directly — SdkTransport wraps the SDK's users/posts clients and is shared
@@ -60,6 +64,7 @@ export interface XTransport {
   unretweet(userId: string, tweetId: string): Promise<RepostStatus>;
   follow(userId: string, targetUserId: string): Promise<FollowStatus>;
   unfollow(userId: string, targetUserId: string): Promise<FollowStatus>;
+  deleteTweet(id: string): Promise<DeleteStatus>;
 }
 
 interface GetMeResult {
@@ -128,6 +133,7 @@ interface PostsClientLike {
   create(body: { text?: string; reply?: { in_reply_to_tweet_id: string } }): Promise<ItemResult<TweetLike>>;
   getById(id: string, options?: { tweetFields?: string[] }): Promise<ItemResult<TweetLike>>;
   searchRecent(query: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  delete(id: string): Promise<ItemResult<{ deleted?: boolean }>>;
 }
 
 // Requested on every tweet-returning call so `author_id`/`created_at` are
@@ -331,6 +337,19 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err);
     }
   }
+
+  async deleteTweet(id: string): Promise<DeleteStatus> {
+    try {
+      const res = await this.postsClient.delete(id);
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the delete", res.errors ?? null);
+      }
+      return { deleted: (res.data.deleted as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err);
+    }
+  }
 }
 
 function mapSdkError(err: unknown): FinchError {
@@ -451,6 +470,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async unfollow(userId: string, targetUserId: string): Promise<FollowStatus> {
     const t = await this.ensureFreshToken();
     return t.unfollow(userId, targetUserId);
+  }
+
+  async deleteTweet(id: string): Promise<DeleteStatus> {
+    const t = await this.ensureFreshToken();
+    return t.deleteTweet(id);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {

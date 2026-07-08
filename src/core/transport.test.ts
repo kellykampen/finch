@@ -52,6 +52,9 @@ const unusedPostsClient = {
   searchRecent: async () => {
     throw new Error("searchRecent not stubbed for this test");
   },
+  delete: async () => {
+    throw new Error("delete not stubbed for this test");
+  },
 };
 
 describe("ByokTransport.getMe", () => {

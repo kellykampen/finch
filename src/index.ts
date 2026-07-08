@@ -16,6 +16,7 @@ import { runRepost } from "./commands/repost";
 import { runUnrepost } from "./commands/unrepost";
 import { runFollow } from "./commands/follow";
 import { runUnfollow } from "./commands/unfollow";
+import { runDelete } from "./commands/delete";
 import { runConfigGet, runConfigSet, runConfigPath } from "./commands/config";
 import { runSchema } from "./commands/schema";
 import { resolveDispatchArgs } from "./core/dispatch-args";
@@ -74,6 +75,9 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   }
   if (cmd === "unfollow") {
     return runUnfollow(args.slice(1));
+  }
+  if (cmd === "delete") {
+    return runDelete(args.slice(1));
   }
   if (cmd === "config" && sub === "get") {
     return runConfigGet(args.slice(2));
