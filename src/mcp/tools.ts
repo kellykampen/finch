@@ -51,10 +51,34 @@ export interface ToolDefinition {
 // positional value that happens to literally equal a registered flag string
 // (e.g. `post_tweet` called with `{text: "--dry-run"}`) would be
 // misinterpreted by parseArgs as that flag instead of taken literally.
-function buildArgv(positionals: string[], opts: { count?: number; dryRun?: boolean } = {}): string[] {
+interface MediaEntry {
+  path: string;
+  alt?: string;
+}
+
+interface ThreadMediaEntry extends MediaEntry {
+  tweetIndex: number;
+}
+
+function buildArgv(
+  positionals: string[],
+  opts: { count?: number; dryRun?: boolean; media?: MediaEntry[]; threadMedia?: ThreadMediaEntry[] } = {},
+): string[] {
   const argv: string[] = [];
   if (opts.count !== undefined) argv.push("-n", String(opts.count));
   if (opts.dryRun) argv.push("--dry-run");
+  if (opts.media) {
+    for (const { path, alt } of opts.media) {
+      argv.push("--media", path);
+      if (alt !== undefined) argv.push("--alt", alt);
+    }
+  }
+  if (opts.threadMedia) {
+    for (const { tweetIndex, path, alt } of opts.threadMedia) {
+      argv.push("--media", `${tweetIndex}:${path}`);
+      if (alt !== undefined) argv.push("--alt", `${tweetIndex}:${alt}`);
+    }
+  }
   argv.push("--", ...positionals);
   return argv;
 }
@@ -94,9 +118,21 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
     {
       name: "post_tweet",
       description: "Create a top-level post (maps to `finch post`).",
-      inputSchema: { text: z.string(), dryRun: z.boolean().optional() },
+      inputSchema: {
+        text: z.string(),
+        dryRun: z.boolean().optional(),
+        media: z.array(z.object({ path: z.string(), alt: z.string().optional() })).optional(),
+      },
       handler: (args) =>
-        runTool(() => runPost(buildArgv([args.text as string], { dryRun: args.dryRun as boolean }), deps)),
+        runTool(() =>
+          runPost(
+            buildArgv([args.text as string], {
+              dryRun: args.dryRun as boolean,
+              media: args.media as MediaEntry[] | undefined,
+            }),
+            deps,
+          ),
+        ),
     },
     {
       name: "reply_tweet",
@@ -110,9 +146,29 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
     {
       name: "post_thread",
       description: "Post a chain of posts, each replying to the previous (maps to `finch thread`).",
-      inputSchema: { texts: z.array(z.string()).min(1), dryRun: z.boolean().optional() },
+      inputSchema: {
+        texts: z.array(z.string()).min(1),
+        dryRun: z.boolean().optional(),
+        media: z
+          .array(
+            z.object({
+              tweetIndex: z.number().int().nonnegative(),
+              path: z.string(),
+              alt: z.string().optional(),
+            }),
+          )
+          .optional(),
+      },
       handler: (args) =>
-        runTool(() => runThread(buildArgv(args.texts as string[], { dryRun: args.dryRun as boolean }), deps)),
+        runTool(() =>
+          runThread(
+            buildArgv(args.texts as string[], {
+              dryRun: args.dryRun as boolean,
+              threadMedia: args.media as ThreadMediaEntry[] | undefined,
+            }),
+            deps,
+          ),
+        ),
     },
     {
       name: "get_timeline",
