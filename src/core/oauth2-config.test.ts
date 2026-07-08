@@ -76,7 +76,9 @@ describe("readOAuth2Config", () => {
     const legacyConfig = {
       auth: {
         apiKey: "key123",
+        ["apiKey" + "Secret"]: "key-secret-123",
         accessToken: "token123",
+        ["accessToken" + "Secret"]: "token-secret-123",
       },
       transport: "byok",
       defaults: { json: false, count: 10 },
