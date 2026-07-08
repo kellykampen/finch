@@ -258,6 +258,26 @@ describe("ByokTransport.createTweet", () => {
       expect((err as FinchError).code).toBe("AUTH_ERROR");
     }
   });
+
+  test("does not misclassify a search-tier 403 on a non-search endpoint as CLIENT_ERROR", async () => {
+    const transport = new ByokTransport(unusedUsersClient, {
+      ...unusedPostsClient,
+      create: async () => {
+        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+          detail: "You must enroll in a tier to access search features.",
+        });
+      },
+    });
+
+    try {
+      await transport.createTweet("hello");
+      throw new Error("expected createTweet to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe("X rejected the provided credentials");
+    }
+  });
 });
 
 describe("ByokTransport.getTweet", () => {
