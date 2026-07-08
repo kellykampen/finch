@@ -1,5 +1,5 @@
 import { Client, ApiError, OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { FinchError } from "./errors";
 import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
 import type { OAuth2AuthConfig } from "./oauth2-config";
@@ -74,6 +74,7 @@ export interface XTransport {
   unfollow(userId: string, targetUserId: string): Promise<FollowStatus>;
   deleteTweet(id: string): Promise<DeleteStatus>;
   uploadImage(path: string): Promise<{ media_id: string }>;
+  uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }>;
 }
 
 interface GetMeResult {
@@ -156,6 +157,18 @@ interface MediaClientLike {
   upload(options: {
     body: { media: string; mediaCategory: string; mediaType: string };
   }): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
+  initializeUpload(options: {
+    body: { mediaCategory: "tweet_gif" | "tweet_video"; mediaType: VideoMediaType; totalBytes: number };
+  }): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
+  appendUpload(
+    id: string,
+    options: { body: { media: string; segmentIndex: number } },
+  ): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
+  finalizeUpload(id: string): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
+  getUploadStatus(
+    mediaId: string,
+    options?: { command?: "STATUS" },
+  ): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
 }
 
 // Requested on every tweet-returning call so `author_id`/`created_at` are
@@ -164,6 +177,10 @@ const TWEET_FIELDS = ["author_id", "created_at"];
 // Requested on every user-profile call so `description`/`public_metrics` are
 // populated — the X API only returns `id`/`username`/`name` by default.
 const USER_FIELDS = ["description", "public_metrics"];
+
+const VIDEO_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
+const VIDEO_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_STATUS_CHECK_AFTER_SECS = 5;
 
 function shapeTweet(t: TweetLike): FinchTweet {
   return {
@@ -178,7 +195,7 @@ export class ByokTransport implements XTransport {
   constructor(
     private readonly usersClient: UsersClientLike,
     private readonly postsClient: PostsClientLike,
-    private readonly mediaClient: MediaClientLike,
+    private readonly mediaClient: MediaClientLike = missingMediaClient,
   ) {}
 
   async getMe(): Promise<FinchUser> {
@@ -447,6 +464,57 @@ export class ByokTransport implements XTransport {
       throw mapSdkError(err, "uploadImage");
     }
   }
+
+  async uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }> {
+    const mediaConfig = resolveVideoMediaConfig(path);
+    if (!mediaConfig) {
+      throw new FinchError(
+        "USAGE_ERROR",
+        `Unsupported GIF/video type for ${path}. Supported extensions: .gif, .mp4, .mov, .webm, .ts, .m2ts`,
+      );
+    }
+
+    let totalBytes: number;
+    try {
+      totalBytes = statSync(path).size;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new FinchError("USAGE_ERROR", `Cannot read media file ${path}: ${message}`, null);
+    }
+
+    if (totalBytes > mediaConfig.maxBytes) {
+      throw new FinchError(
+        "USAGE_ERROR",
+        `${path} is ${formatBytes(totalBytes)}, which exceeds the ${formatBytes(mediaConfig.maxBytes)} limit for ${mediaConfig.label}.`,
+      );
+    }
+
+    try {
+      onStatus?.(`Initializing ${mediaConfig.label} upload (${formatBytes(totalBytes)})`);
+      const init = await this.mediaClient.initializeUpload({
+        body: {
+          mediaCategory: mediaConfig.mediaCategory,
+          mediaType: mediaConfig.mediaType,
+          totalBytes,
+        },
+      });
+      const mediaId = extractMediaId(init.data);
+      if (!mediaId) {
+        throw new FinchError("CLIENT_ERROR", "X API did not return a media ID", init.errors ?? null);
+      }
+
+      await appendUploadChunks(this.mediaClient, mediaId, path, totalBytes, onStatus);
+
+      onStatus?.("Finalizing media upload");
+      const finalized = await this.mediaClient.finalizeUpload(mediaId);
+      await waitForProcessing(this.mediaClient, mediaId, finalized.data, onStatus);
+
+      return { media_id: mediaId };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "uploadVideo");
+    }
+  }
 }
 
 const MEDIA_TYPE_BY_EXTENSION: Record<string, "image/jpeg" | "image/bmp" | "image/png" | "image/webp" | "image/tiff"> =
@@ -466,6 +534,159 @@ function resolveMediaType(
   const dotIndex = path.lastIndexOf(".");
   const ext = dotIndex === -1 ? "" : path.slice(dotIndex + 1).toLowerCase();
   return MEDIA_TYPE_BY_EXTENSION[ext];
+}
+
+type VideoMediaType = "video/mp4" | "video/webm" | "video/mp2t" | "video/quicktime" | "image/gif";
+
+interface VideoMediaConfig {
+  label: "GIF" | "video";
+  mediaCategory: "tweet_gif" | "tweet_video";
+  mediaType: VideoMediaType;
+  maxBytes: number;
+}
+
+const missingMediaClient: MediaClientLike = {
+  upload: async () => {
+    throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
+  },
+  initializeUpload: async () => {
+    throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
+  },
+  appendUpload: async () => {
+    throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
+  },
+  finalizeUpload: async () => {
+    throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
+  },
+  getUploadStatus: async () => {
+    throw new FinchError("CLIENT_ERROR", "Media upload client is not configured");
+  },
+};
+
+const VIDEO_MEDIA_CONFIG_BY_EXTENSION: Record<string, VideoMediaConfig> = {
+  gif: { label: "GIF", mediaCategory: "tweet_gif", mediaType: "image/gif", maxBytes: 15 * 1024 * 1024 },
+  mp4: { label: "video", mediaCategory: "tweet_video", mediaType: "video/mp4", maxBytes: 512 * 1024 * 1024 },
+  mov: { label: "video", mediaCategory: "tweet_video", mediaType: "video/quicktime", maxBytes: 512 * 1024 * 1024 },
+  webm: { label: "video", mediaCategory: "tweet_video", mediaType: "video/webm", maxBytes: 512 * 1024 * 1024 },
+  ts: { label: "video", mediaCategory: "tweet_video", mediaType: "video/mp2t", maxBytes: 512 * 1024 * 1024 },
+  m2ts: { label: "video", mediaCategory: "tweet_video", mediaType: "video/mp2t", maxBytes: 512 * 1024 * 1024 },
+};
+
+function resolveVideoMediaConfig(path: string): VideoMediaConfig | undefined {
+  const dotIndex = path.lastIndexOf(".");
+  const ext = dotIndex === -1 ? "" : path.slice(dotIndex + 1).toLowerCase();
+  return VIDEO_MEDIA_CONFIG_BY_EXTENSION[ext];
+}
+
+async function appendUploadChunks(
+  mediaClient: MediaClientLike,
+  mediaId: string,
+  path: string,
+  totalBytes: number,
+  onStatus?: (message: string) => void,
+): Promise<void> {
+  const fd = openSync(path, "r");
+  const buffer = Buffer.allocUnsafe(Math.min(VIDEO_CHUNK_SIZE_BYTES, Math.max(totalBytes, 1)));
+  let segmentIndex = 0;
+  let uploadedBytes = 0;
+
+  try {
+    while (uploadedBytes < totalBytes) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead <= 0) break;
+      const media = buffer.subarray(0, bytesRead).toString("base64");
+      await mediaClient.appendUpload(mediaId, {
+        body: { media, segmentIndex },
+      });
+      uploadedBytes += bytesRead;
+      segmentIndex++;
+      onStatus?.(`Uploaded ${formatBytes(uploadedBytes)} of ${formatBytes(totalBytes)}`);
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
+
+interface ProcessingInfo {
+  state?: string;
+  checkAfterSecs?: number;
+  error?: unknown;
+}
+
+async function waitForProcessing(
+  mediaClient: MediaClientLike,
+  mediaId: string,
+  initialData: Record<string, unknown> | undefined,
+  onStatus?: (message: string) => void,
+): Promise<void> {
+  let processingInfo = extractProcessingInfo(initialData);
+  const deadline = Date.now() + VIDEO_PROCESSING_TIMEOUT_MS;
+
+  while (processingInfo) {
+    const state = processingInfo.state;
+    if (state === "succeeded") {
+      onStatus?.("Media processing succeeded");
+      return;
+    }
+    if (state === "failed") {
+      throw new FinchError("CLIENT_ERROR", `Media processing failed${formatProcessingError(processingInfo.error)}`);
+    }
+    if (Date.now() >= deadline) {
+      throw new FinchError("CLIENT_ERROR", "Timed out waiting for media processing to finish");
+    }
+
+    const waitSecs = processingInfo.checkAfterSecs ?? DEFAULT_STATUS_CHECK_AFTER_SECS;
+    onStatus?.(`Media processing ${state ?? "pending"}; checking again in ${waitSecs}s`);
+    await sleep(Math.max(0, waitSecs * 1000));
+    const status = await mediaClient.getUploadStatus(mediaId, { command: "STATUS" });
+    processingInfo = extractProcessingInfo(status.data);
+    if (!processingInfo) return;
+  }
+}
+
+function extractMediaId(data: Record<string, unknown> | undefined): string | undefined {
+  if (!data) return undefined;
+  const id = data.id ?? data.media_id;
+  return typeof id === "string" ? id : undefined;
+}
+
+function extractProcessingInfo(data: Record<string, unknown> | undefined): ProcessingInfo | undefined {
+  const raw = data?.processing_info ?? data?.processingInfo;
+  if (!raw || typeof raw !== "object") return undefined;
+  const info = raw as Record<string, unknown>;
+  const rawCheckAfterSecs = info.check_after_secs ?? info.checkAfterSecs;
+  return {
+    state: typeof info.state === "string" ? info.state : undefined,
+    checkAfterSecs: typeof rawCheckAfterSecs === "number" ? rawCheckAfterSecs : undefined,
+    error: info.error,
+  };
+}
+
+function formatProcessingError(error: unknown): string {
+  if (!error) return "";
+  if (typeof error === "string") return `: ${error}`;
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const message = record.message ?? record.name;
+    if (typeof message === "string") return `: ${message}`;
+  }
+  return `: ${String(error)}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} ${bytes === 1 ? "byte" : "bytes"}`;
+  if (bytes < 1024 * 1024) {
+    const kb = bytes / 1024;
+    if (Number.isInteger(kb)) return `${kb} KB`;
+    return `${kb.toFixed(1)} KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  if (Number.isInteger(mb)) return `${mb} MB`;
+  return `${mb.toFixed(1)} MB`;
 }
 
 function mapSdkError(err: unknown, operation?: string): FinchError {
@@ -663,6 +884,11 @@ class RefreshingOAuth2Transport implements XTransport {
   async uploadImage(path: string): Promise<{ media_id: string }> {
     const t = await this.ensureFreshToken();
     return t.uploadImage(path);
+  }
+
+  async uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }> {
+    const t = await this.ensureFreshToken();
+    return t.uploadVideo(path, onStatus);
   }
 
   private async ensureFreshToken(): Promise<XTransport> {

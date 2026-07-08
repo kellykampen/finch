@@ -22,6 +22,7 @@ export interface PostHelpResult {
 export interface PostDeps {
   getTransport?: () => XTransport;
   readStdin?: () => Promise<string>;
+  writeStatus?: (message: string) => void;
 }
 
 const POST_USAGE = `Usage: finch post [flags] [<text>]
@@ -29,7 +30,7 @@ const POST_USAGE = `Usage: finch post [flags] [<text>]
 Flags:
   --dry-run          Validate and show what would be posted without calling the X API
   --file <path>      Read post text from a file
-  --media <path>     Attach an image (repeatable or comma-separated; up to 4)
+  --media <path>     Attach images (up to 4) or one GIF/video; repeatable/comma-separated
   --help, -h         Show this help message
 
 Text may be supplied as a positional argument, via --file, or from stdin.
@@ -107,6 +108,7 @@ export async function runPost(
 ): Promise<{ data: PostResult | PostDryRunResult | PostHelpResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const readStdin = deps.readStdin ?? (() => Bun.stdin.text());
+  const writeStatus = deps.writeStatus ?? ((message: string) => console.error(message));
 
   const { help, dryRun, file, media, positionals } = parsePostArgs(argv);
 
@@ -114,6 +116,7 @@ export async function runPost(
     return { data: { help: true, text: POST_USAGE }, human: POST_USAGE };
   }
 
+  const mediaPlan = planMediaUploads(media);
   const text = await resolveText(positionals, file, media.length > 0, readStdin);
 
   if (text.length === 0 && media.length === 0) {
@@ -121,10 +124,6 @@ export async function runPost(
   }
   if (text.length > 0) {
     validatePostText(text);
-  }
-
-  if (media.length > 4) {
-    throw new FinchError("USAGE_ERROR", `Too many images: ${media.length} (maximum 4)`);
   }
 
   if (dryRun) {
@@ -135,9 +134,66 @@ export async function runPost(
   }
 
   const transport = getTransport();
-  const mediaIds = media.length > 0 ? await uploadImages(transport, media) : undefined;
+  const mediaIds = await uploadMedia(transport, mediaPlan, writeStatus);
   const created = await transport.createTweet(text, undefined, mediaIds);
   return { data: created, human: `Posted: ${created.id}` };
+}
+
+type MediaKind = "image" | "video";
+
+interface PlannedMediaUpload {
+  kind: MediaKind;
+  paths: string[];
+}
+
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "bmp", "png", "webp", "tiff", "tif"]);
+const VIDEO_EXTENSIONS = new Set(["gif", "mp4", "mov", "webm", "ts", "m2ts"]);
+
+function planMediaUploads(paths: string[]): PlannedMediaUpload {
+  const kinds = paths.map((path) => ({ path, kind: classifyMediaPath(path) }));
+  const unsupported = kinds.find((item) => item.kind === undefined);
+  if (unsupported) {
+    throw new FinchError(
+      "USAGE_ERROR",
+      `Unsupported media type for ${unsupported.path}. Supported extensions: .jpg, .jpeg, .png, .webp, .bmp, .tiff, .tif, .gif, .mp4, .mov, .webm, .ts, .m2ts`,
+    );
+  }
+
+  const videoPaths = kinds.filter((item) => item.kind === "video").map((item) => item.path);
+  const imagePaths = kinds.filter((item) => item.kind === "image").map((item) => item.path);
+
+  if (videoPaths.length > 1) {
+    throw new FinchError("USAGE_ERROR", "Only one GIF or video can be attached to a post");
+  }
+  if (videoPaths.length === 1 && imagePaths.length > 0) {
+    throw new FinchError("USAGE_ERROR", "Cannot mix images with GIF/video media in the same post");
+  }
+  if (imagePaths.length > 4) {
+    throw new FinchError("USAGE_ERROR", `Too many images: ${imagePaths.length} (maximum 4)`);
+  }
+
+  return videoPaths.length === 1 ? { kind: "video", paths: videoPaths } : { kind: "image", paths: imagePaths };
+}
+
+function classifyMediaPath(path: string): MediaKind | undefined {
+  const dotIndex = path.lastIndexOf(".");
+  const ext = dotIndex === -1 ? "" : path.slice(dotIndex + 1).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (VIDEO_EXTENSIONS.has(ext)) return "video";
+  return undefined;
+}
+
+async function uploadMedia(
+  transport: XTransport,
+  plan: PlannedMediaUpload,
+  writeStatus: (message: string) => void,
+): Promise<string[] | undefined> {
+  if (plan.paths.length === 0) return undefined;
+  if (plan.kind === "video") {
+    const result = await transport.uploadVideo(plan.paths[0] as string, writeStatus);
+    return [result.media_id];
+  }
+  return uploadImages(transport, plan.paths);
 }
 
 async function uploadImages(transport: XTransport, paths: string[]): Promise<string[]> {
