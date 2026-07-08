@@ -16,6 +16,7 @@ const EXPECTED_TOOL_NAMES = [
   "unlike_tweet",
   "repost_tweet",
   "unrepost_tweet",
+  "delete_tweet",
   "follow_user",
   "unfollow_user",
   "whoami",

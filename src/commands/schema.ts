@@ -152,6 +152,14 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ following: false, username: string }",
   },
   {
+    name: "delete",
+    description: "Delete a post.",
+    flags: ["--json", "--dry-run"],
+    positionals: ["<id-or-url>"],
+    endpoint: "DELETE /2/tweets/:id",
+    dataShape: "{ deleted: true, tweet_id: string }",
+  },
+  {
     name: "config get",
     description:
       "Print one config value. Masks auth.* fields to all-but-last-4 characters, whether or not --json is set.",
