@@ -171,7 +171,10 @@ describe("runThread", () => {
 
     expect(result.data).toEqual({
       dryRun: true,
-      wouldSend: [{ text: "first" }, { text: "second" }],
+      wouldSend: [
+        { text: "first", media: [], alt: [] },
+        { text: "second", media: [], alt: [] },
+      ],
     });
   });
 
@@ -231,7 +234,10 @@ describe("runThread", () => {
 
     expect(result.data).toEqual({
       dryRun: true,
-      wouldSend: [{ text: "1/2 first" }, { text: "2/2 second" }],
+      wouldSend: [
+        { text: "1/2 first", media: [], alt: [] },
+        { text: "2/2 second", media: [], alt: [] },
+      ],
     });
   });
 
@@ -304,7 +310,10 @@ describe("runThread", () => {
 
     expect(result.data).toEqual({
       dryRun: true,
-      wouldSend: [{ text: "first" }, { text: "second" }],
+      wouldSend: [
+        { text: "first", media: [], alt: [] },
+        { text: "second", media: [], alt: [] },
+      ],
     });
     expect(result.human).toContain("continuing from 11111");
   });
@@ -317,6 +326,160 @@ describe("runThread", () => {
       expect(err).toBeInstanceOf(FinchError);
       const finchErr = err as FinchError;
       expect(finchErr.code).toBe("USAGE_ERROR");
+    }
+  });
+
+  test("--media <n>:<path> attaches media to a single tweet in a multi-tweet thread", async () => {
+    const createTweetCalls: Array<{ text: string; replyToId?: string; mediaIds?: string[] }> = [];
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      createTweet: async (text, replyToId, mediaIds) => {
+        createTweetCalls.push({ text, replyToId, mediaIds });
+        return { id: String(createTweetCalls.length), text };
+      },
+    });
+
+    const result = await runThread(["first", "second", "--media", "1:pic.png"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+    expect(createTweetCalls).toEqual([
+      { text: "first", replyToId: undefined, mediaIds: undefined },
+      { text: "second", replyToId: "1", mediaIds: ["id-for-pic.png"] },
+    ]);
+  });
+
+  test("--media can attach media to multiple different tweets in a thread", async () => {
+    const createTweetCalls: Array<{ text: string; replyToId?: string; mediaIds?: string[] }> = [];
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      createTweet: async (text, replyToId, mediaIds) => {
+        createTweetCalls.push({ text, replyToId, mediaIds });
+        return { id: String(createTweetCalls.length), text };
+      },
+    });
+
+    const result = await runThread(["one", "two", "three", "--media", "0:a.png", "--media", "2:b.png"], {
+      getTransport: () => transport,
+    });
+
+    expect(result.data).toEqual({ ids: ["1", "2", "3"], count: 3 });
+    expect(createTweetCalls).toEqual([
+      { text: "one", replyToId: undefined, mediaIds: ["id-for-a.png"] },
+      { text: "two", replyToId: "1", mediaIds: undefined },
+      { text: "three", replyToId: "2", mediaIds: ["id-for-b.png"] },
+    ]);
+  });
+
+  test("--alt <n>:<text> attaches alt text to the preceding --media at the same index", async () => {
+    const calls: string[] = [];
+    let tweetCounter = 0;
+    const transport = fakeTransport({
+      uploadImage: async (path) => {
+        calls.push(`upload:${path}`);
+        return { media_id: `id-for-${path}` };
+      },
+      setMediaAltText: async (mediaId, altText) => {
+        calls.push(`alt:${mediaId}:${altText}`);
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        tweetCounter += 1;
+        calls.push(`tweet:${text}:${mediaIds?.join(",") ?? ""}`);
+        return { id: String(tweetCounter), text };
+      },
+    });
+
+    const result = await runThread(
+      ["first", "second", "--media", "1:a.png", "--alt", "1:A alt", "--media", "1:b.png", "--alt", "1:B alt"],
+      { getTransport: () => transport },
+    );
+
+    expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+    expect(calls).toEqual([
+      "tweet:first:",
+      "upload:a.png",
+      "upload:b.png",
+      "alt:id-for-a.png:A alt",
+      "alt:id-for-b.png:B alt",
+      "tweet:second:id-for-a.png,id-for-b.png",
+    ]);
+  });
+
+  test("media index out of range throws a USAGE_ERROR", async () => {
+    await expect(
+      runThread(["first", "second", "--media", "2:pic.png"], { getTransport: () => fakeTransport({}) }),
+    ).rejects.toThrow(FinchError);
+    try {
+      await runThread(["first", "second", "--media", "2:pic.png"], { getTransport: () => fakeTransport({}) });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("USAGE_ERROR");
+      expect(finchErr.message).toContain("out of range");
+    }
+  });
+
+  test("malformed --media value without colon throws a USAGE_ERROR", async () => {
+    await expect(
+      runThread(["first", "--media", "0pic.png"], { getTransport: () => fakeTransport({}) }),
+    ).rejects.toThrow(FinchError);
+    try {
+      await runThread(["first", "--media", "0pic.png"], { getTransport: () => fakeTransport({}) });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("USAGE_ERROR");
+      expect(finchErr.message).toContain("Invalid --media value");
+    }
+  });
+
+  test("thread with no --media flags behaves exactly as before", async () => {
+    const replyToIds: Array<string | undefined> = [];
+    let counter = 0;
+    const transport = fakeTransport({
+      createTweet: async (text, replyToId) => {
+        replyToIds.push(replyToId);
+        counter += 1;
+        return { id: String(counter), text };
+      },
+    });
+
+    const result = await runThread(["first", "second", "third"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ ids: ["1", "2", "3"], count: 3 });
+    expect(replyToIds).toEqual([undefined, "1", "2"]);
+  });
+
+  test("--dry-run shows per-tweet media and alt text", async () => {
+    const result = await runThread(["first", "second", "--media", "1:pic.png", "--alt", "1:my alt", "--dry-run"], {
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: [
+        { text: "first", media: [], alt: [] },
+        { text: "second", media: ["pic.png"], alt: ["my alt"] },
+      ],
+    });
+  });
+
+  test("per-tweet media rules are enforced per index", async () => {
+    await expect(
+      runThread(["first", "second", "--media", "0:a.png", "--media", "0:b.mp4"], {
+        getTransport: () => fakeTransport({}),
+      }),
+    ).rejects.toThrow(FinchError);
+    try {
+      await runThread(["first", "second", "--media", "0:a.png", "--media", "0:b.mp4"], {
+        getTransport: () => fakeTransport({}),
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("USAGE_ERROR");
+      expect(finchErr.message).toContain("Cannot mix images with GIF/video media");
     }
   });
 });
