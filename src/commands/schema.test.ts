@@ -10,6 +10,8 @@ const ALL_COMMANDS = [
   "thread",
   "timeline",
   "bookmark list",
+  "bookmark add",
+  "bookmark rm",
   "search",
   "user-posts",
   "user",

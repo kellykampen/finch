@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { runBookmarkList } from "./bookmark";
+import { runBookmarkList, runBookmarkAdd, runBookmarkRemove } from "./bookmark";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import type { FinchOAuth2Config } from "../core/oauth2-config";
@@ -122,6 +122,141 @@ describe("runBookmarkList", () => {
           throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
         },
         getConfig: () => null,
+      }),
+    ).rejects.toThrow(FinchError);
+  });
+});
+
+describe("runBookmarkAdd", () => {
+  test("bookmarks a bare id", async () => {
+    let capturedTweetId: string | undefined;
+    const transport = fakeTransport({
+      addBookmark: async (tweetId) => {
+        capturedTweetId = tweetId;
+        return { bookmarked: true };
+      },
+    });
+
+    const result = await runBookmarkAdd(["999"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ bookmarked: true, tweet_id: "999" });
+    expect(capturedTweetId).toBe("999");
+  });
+
+  test("extracts the id from a status URL", async () => {
+    const transport = fakeTransport({
+      addBookmark: async () => ({ bookmarked: true }),
+    });
+
+    const result = await runBookmarkAdd(["https://x.com/user/status/999"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ bookmarked: true, tweet_id: "999" });
+  });
+
+  test("--dry-run reports wouldSend without calling the transport", async () => {
+    const result = await runBookmarkAdd(["999", "--dry-run"], {
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999" } });
+  });
+
+  test("--dry-run doesn't require auth to be configured", async () => {
+    const result = await runBookmarkAdd(["999", "--dry-run"], {
+      getTransport: () => {
+        throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+      },
+    });
+
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999" } });
+  });
+
+  test("throws USAGE_ERROR when the id-or-url argument is missing", async () => {
+    await expect(runBookmarkAdd([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
+  });
+
+  test("throws AUTH_ERROR when Finch is not configured", async () => {
+    await expect(
+      runBookmarkAdd(["999"], {
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+        },
+      }),
+    ).rejects.toThrow(FinchError);
+  });
+
+  test("surfaces a missing bookmark.write scope as a clear AUTH_ERROR", async () => {
+    const transport = fakeTransport({
+      addBookmark: async () => {
+        throw new FinchError(
+          "AUTH_ERROR",
+          "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
+        );
+      },
+    });
+
+    await expect(runBookmarkAdd(["999"], { getTransport: () => transport })).rejects.toThrow(FinchError);
+  });
+});
+
+describe("runBookmarkRemove", () => {
+  test("removes a bookmark for a bare id", async () => {
+    let capturedTweetId: string | undefined;
+    const transport = fakeTransport({
+      removeBookmark: async (tweetId) => {
+        capturedTweetId = tweetId;
+        return { bookmarked: false };
+      },
+    });
+
+    const result = await runBookmarkRemove(["999"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ bookmarked: false, tweet_id: "999" });
+    expect(capturedTweetId).toBe("999");
+  });
+
+  test("extracts the id from a status URL", async () => {
+    const transport = fakeTransport({
+      removeBookmark: async () => ({ bookmarked: false }),
+    });
+
+    const result = await runBookmarkRemove(["https://x.com/user/status/999"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ bookmarked: false, tweet_id: "999" });
+  });
+
+  test("--dry-run reports wouldSend without calling the transport", async () => {
+    const result = await runBookmarkRemove(["999", "--dry-run"], {
+      getTransport: () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999" } });
+  });
+
+  test("--dry-run doesn't require auth to be configured", async () => {
+    const result = await runBookmarkRemove(["999", "--dry-run"], {
+      getTransport: () => {
+        throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+      },
+    });
+
+    expect(result.data).toEqual({ dryRun: true, wouldSend: { tweet_id: "999" } });
+  });
+
+  test("throws USAGE_ERROR when the id-or-url argument is missing", async () => {
+    await expect(runBookmarkRemove([], { getTransport: () => fakeTransport({}) })).rejects.toThrow(FinchError);
+  });
+
+  test("throws AUTH_ERROR when Finch is not configured", async () => {
+    await expect(
+      runBookmarkRemove(["999"], {
+        getTransport: () => {
+          throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+        },
       }),
     ).rejects.toThrow(FinchError);
   });
