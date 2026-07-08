@@ -18,7 +18,7 @@ import { runDelete } from "../commands/delete";
 import { runFollow } from "../commands/follow";
 import { runUnfollow } from "../commands/unfollow";
 import { runWhoami } from "../commands/whoami";
-import { runBookmarkList } from "../commands/bookmark";
+import { runBookmarkList, runBookmarkAdd, runBookmarkRemove } from "../commands/bookmark";
 
 export interface McpToolDeps {
   getTransport?: () => XTransport;
@@ -119,6 +119,20 @@ export function createTools(deps: McpToolDeps = {}): ToolDefinition[] {
       description: "Fetch the authenticated user's bookmarked posts (maps to `finch bookmark list`).",
       inputSchema: { count: z.number().int().positive().optional() },
       handler: (args) => runTool(() => runBookmarkList(buildArgv([], { count: args.count as number }), deps)),
+    },
+    {
+      name: "add_bookmark",
+      description: "Bookmark a post (maps to `finch bookmark add`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() => runBookmarkAdd(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
+    },
+    {
+      name: "remove_bookmark",
+      description: "Remove a bookmark (maps to `finch bookmark rm`).",
+      inputSchema: { idOrUrl: z.string(), dryRun: z.boolean().optional() },
+      handler: (args) =>
+        runTool(() => runBookmarkRemove(buildArgv([args.idOrUrl as string], { dryRun: args.dryRun as boolean }), deps)),
     },
     {
       name: "search_tweets",

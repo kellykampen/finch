@@ -168,6 +168,22 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
   },
   {
+    name: "bookmark add",
+    description: "Bookmark a post.",
+    flags: ["--json", "--dry-run"],
+    positionals: ["<id-or-url>"],
+    endpoint: "POST /2/users/:id/bookmarks",
+    dataShape: "{ bookmarked: true, tweet_id: string }",
+  },
+  {
+    name: "bookmark rm",
+    description: "Remove a bookmark.",
+    flags: ["--json", "--dry-run"],
+    positionals: ["<id-or-url>"],
+    endpoint: "DELETE /2/users/:id/bookmarks/:tweet_id",
+    dataShape: "{ bookmarked: false, tweet_id: string }",
+  },
+  {
     name: "config get",
     description:
       "Print one config value. Masks auth.* fields to all-but-last-4 characters, whether or not --json is set.",

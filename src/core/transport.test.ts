@@ -25,6 +25,12 @@ const unusedUsersClient = {
   getBookmarks: async () => {
     throw new Error("getBookmarks not stubbed for this test");
   },
+  createBookmark: async () => {
+    throw new Error("createBookmark not stubbed for this test");
+  },
+  deleteBookmark: async () => {
+    throw new Error("deleteBookmark not stubbed for this test");
+  },
   likePost: async () => {
     throw new Error("likePost not stubbed for this test");
   },
@@ -490,6 +496,162 @@ describe("ByokTransport.listBookmarks", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("AUTH_ERROR");
+    }
+  });
+});
+
+describe("ByokTransport.addBookmark", () => {
+  test("passes the userId and tweetId through and bookmarks the tweet", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        createBookmark: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { bookmarked: true } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.addBookmark("42", "999");
+
+    expect(result).toEqual({ bookmarked: true });
+    expect(capturedArgs).toEqual(["42", { tweetId: "999" }]);
+  });
+
+  test("falls back to bookmarked: true when the API omits the field", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        createBookmark: async () => ({ data: {} }),
+      },
+      unusedPostsClient,
+    );
+
+    expect(await transport.addBookmark("42", "999")).toEqual({ bookmarked: true });
+  });
+
+  test("throws CLIENT_ERROR when the API returns no data", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        createBookmark: async () => ({ errors: [{ detail: "not found" }] }),
+      },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.addBookmark("42", "999");
+      throw new Error("expected addBookmark to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+
+  test("maps a missing bookmark.write 403 to a clear AUTH_ERROR", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        createBookmark: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            title: "Client Forbidden",
+            detail: "Missing required scopes: bookmark.write",
+            type: "https://api.twitter.com/2/problems/client-forbidden",
+            status: 403,
+            reason: "missing-scope",
+          });
+        },
+      },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.addBookmark("42", "999");
+      throw new Error("expected addBookmark to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe(
+        "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
+      );
+    }
+  });
+});
+
+describe("ByokTransport.removeBookmark", () => {
+  test("passes the userId and tweetId through and removes the bookmark", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        deleteBookmark: async (...args: unknown[]) => {
+          capturedArgs = args;
+          return { data: { bookmarked: false } };
+        },
+      },
+      unusedPostsClient,
+    );
+
+    const result = await transport.removeBookmark("42", "999");
+
+    expect(result).toEqual({ bookmarked: false });
+    expect(capturedArgs).toEqual(["42", "999"]);
+  });
+
+  test("falls back to bookmarked: false when the API omits the field", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        deleteBookmark: async () => ({ data: {} }),
+      },
+      unusedPostsClient,
+    );
+
+    expect(await transport.removeBookmark("42", "999")).toEqual({ bookmarked: false });
+  });
+
+  test("throws CLIENT_ERROR when the API returns no data", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        deleteBookmark: async () => ({ errors: [{ detail: "not found" }] }),
+      },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.removeBookmark("42", "999");
+      throw new Error("expected removeBookmark to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+    }
+  });
+
+  test("maps a missing bookmark.write 403 to a clear AUTH_ERROR", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        deleteBookmark: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+            errors: [{ message: "Missing required scopes: bookmark.write", code: 37 }],
+          });
+        },
+      },
+      unusedPostsClient,
+    );
+
+    try {
+      await transport.removeBookmark("42", "999");
+      throw new Error("expected removeBookmark to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe(
+        "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
+      );
     }
   });
 });

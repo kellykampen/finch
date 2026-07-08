@@ -45,6 +45,10 @@ export interface DeleteStatus {
   deleted: boolean;
 }
 
+export interface BookmarkStatus {
+  bookmarked: boolean;
+}
+
 /**
  * Every core command function depends on this interface, never on the SDK
  * directly — SdkTransport wraps the SDK's users/posts clients and is shared
@@ -58,6 +62,8 @@ export interface XTransport {
   userTweets(userId: string, maxResults: number): Promise<FinchTweet[]>;
   homeTimeline(userId: string, maxResults: number): Promise<FinchTweet[]>;
   listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]>;
+  addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
+  removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus>;
   getUserByUsername(username: string): Promise<FinchUserProfile>;
   like(userId: string, tweetId: string): Promise<LikeStatus>;
   unlike(userId: string, tweetId: string): Promise<LikeStatus>;
@@ -123,6 +129,8 @@ interface UsersClientLike {
   getPosts(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getTimeline(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
   getBookmarks(id: string, options?: ListOptions): Promise<ListResult<TweetLike>>;
+  createBookmark(id: string, body: { tweetId: string }): Promise<EngageActionResult>;
+  deleteBookmark(id: string, tweetId: string): Promise<EngageActionResult>;
   likePost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
   unlikePost(id: string, tweetId: string): Promise<EngageActionResult>;
   repostPost(id: string, options: { body: { tweetId: string } }): Promise<EngageActionResult>;
@@ -256,6 +264,32 @@ export class ByokTransport implements XTransport {
     }
   }
 
+  async addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
+    try {
+      const res = await this.usersClient.createBookmark(userId, { tweetId });
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the bookmark", res.errors ?? null);
+      }
+      return { bookmarked: (res.data.bookmarked as boolean | undefined) ?? true };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "addBookmark");
+    }
+  }
+
+  async removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
+    try {
+      const res = await this.usersClient.deleteBookmark(userId, tweetId);
+      if (!res.data) {
+        throw new FinchError("CLIENT_ERROR", "X API did not confirm the bookmark removal", res.errors ?? null);
+      }
+      return { bookmarked: (res.data.bookmarked as boolean | undefined) ?? false };
+    } catch (err) {
+      if (err instanceof FinchError) throw err;
+      throw mapSdkError(err, "removeBookmark");
+    }
+  }
+
   async getUserByUsername(username: string): Promise<FinchUserProfile> {
     try {
       const res = await this.usersClient.getByUsername(username, { userFields: USER_FIELDS });
@@ -373,6 +407,13 @@ function mapSdkError(err: unknown, operation?: string): FinchError {
       if (operation === "searchRecent" && isSearchTierForbidden(err)) {
         return new FinchError("CLIENT_ERROR", "Your X API tier does not include search access.", err.data ?? null);
       }
+      if ((operation === "addBookmark" || operation === "removeBookmark") && isBookmarkWriteForbidden(err)) {
+        return new FinchError(
+          "AUTH_ERROR",
+          "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
+          err.data ?? null,
+        );
+      }
       return new FinchError("AUTH_ERROR", "X rejected the provided credentials", err.data ?? null);
     }
     if (err.status === 429) {
@@ -398,6 +439,20 @@ function isSearchTierForbidden(err: ApiError): boolean {
   const haystack = stringifyErrorData(err.data);
   if (haystack.includes("search-access-level")) return true;
   return haystack.includes("search") && /access|tier|enroll/.test(haystack);
+}
+
+/**
+ * Detects a missing `bookmark.write` OAuth2 scope. The X API returns a 403
+ * with `bookmark.write` in the error detail (and often a `missing-scope` or
+ * scope-related reason) when the token is not authorized to mutate bookmarks.
+ * This must be surfaced as a clear, actionable AUTH_ERROR rather than a
+ * generic credential failure.
+ */
+function isBookmarkWriteForbidden(err: ApiError): boolean {
+  if (err.status !== 403) return false;
+  const haystack = stringifyErrorData(err.data);
+  if (haystack.includes("bookmark.write")) return true;
+  return haystack.includes("bookmark") && /missing|scope/.test(haystack);
 }
 
 function stringifyErrorData(data: unknown): string {
@@ -482,6 +537,16 @@ class RefreshingOAuth2Transport implements XTransport {
   async listBookmarks(userId: string, maxResults: number): Promise<FinchTweet[]> {
     const t = await this.ensureFreshToken();
     return t.listBookmarks(userId, maxResults);
+  }
+
+  async addBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
+    const t = await this.ensureFreshToken();
+    return t.addBookmark(userId, tweetId);
+  }
+
+  async removeBookmark(userId: string, tweetId: string): Promise<BookmarkStatus> {
+    const t = await this.ensureFreshToken();
+    return t.removeBookmark(userId, tweetId);
   }
 
   async getUserByUsername(username: string): Promise<FinchUserProfile> {
