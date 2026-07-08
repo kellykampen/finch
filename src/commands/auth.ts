@@ -41,6 +41,7 @@ interface CallbackCode {
 interface CallbackServerLike {
   waitForCode(): Promise<CallbackCode>;
   stop(): void | Promise<void>;
+  port?: number;
 }
 
 export interface OAuth2AuthDeps {
@@ -79,7 +80,10 @@ function createRealOAuth2Client(config: { clientId: string; redirectUri: string;
   return new OAuth2(config);
 }
 
-async function startLocalCallbackServer(redirectUri: string, expectedState: string): Promise<CallbackServerLike> {
+export async function startLocalCallbackServer(
+  redirectUri: string,
+  expectedState: string,
+): Promise<CallbackServerLike> {
   const url = new URL(redirectUri);
   const port = Number(url.port);
   if (!Number.isFinite(port)) {
@@ -116,7 +120,9 @@ async function startLocalCallbackServer(redirectUri: string, expectedState: stri
         return new Response("Error: state mismatch", { status: 403 });
       }
       clearTimeout(timeoutId);
-      resolveCode?.({ code, state });
+      // Resolve the code after a short delay so the success Response has time
+      // to flush to the browser before runAuth() stops the server.
+      setTimeout(() => resolveCode?.({ code, state }), 250);
       return new Response(AUTH_SUCCESS_HTML, { headers: { "Content-Type": "text/html" } });
     },
   });
@@ -127,6 +133,7 @@ async function startLocalCallbackServer(redirectUri: string, expectedState: stri
       clearTimeout(timeoutId);
       server.stop(true);
     },
+    port: server.port,
   };
 }
 
