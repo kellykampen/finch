@@ -16,9 +16,9 @@ to type is also safe for an agent to shell out to and parse.
 ## Why
 
 - **No cookie-scraping.** Some X CLIs authenticate by reading your browser's cookie
-  jar. Finch doesn't — it's OAuth 1.0a against the official API, using an app you
-  register yourself in the X Developer Portal. No ToS-gray-area credential theft, no
-  keychain prompts.
+  jar. Finch doesn't — it's OAuth 2.0 (Authorization Code + PKCE) against the official
+  API, using an app you register yourself in the X Developer Portal. No ToS-gray-area
+  credential theft, no keychain prompts.
 - **Your keys, your limits.** No hosted proxy, no third-party SaaS holding your
   account. v1 calls X directly with your own rate limits.
 - **One binary, no runtime.** Finch compiles to a single executable — no Node/Bun
@@ -70,27 +70,42 @@ SKILL.md); then use the other MCP tools it describes.
 
 ## Auth setup
 
-Finch needs an X Developer Portal app with **OAuth 1.0a User Context** keys. Create
-one at [developer.x.com](https://developer.x.com), then grab all four values from that
-app's **"Keys and tokens"** page:
+Finch needs an X Developer Portal app with **OAuth 2.0** enabled. Create or edit an
+app at [developer.x.com](https://developer.x.com), enable **User authentication
+settings**, choose **Native App / public client** (PKCE — no client secret needed),
+and copy the **Client ID** from that app's **"Keys and tokens"** page.
 
-| Config field | X Developer Portal label | `finch auth` prompt |
-|---|---|---|
-| `auth.apiKey` | Consumer Key (older UI: "API Key") | `Consumer Key:` |
-| `auth.apiKeySecret` | Consumer Secret (older UI: "API Key Secret") | `Consumer Secret:` |
-| `auth.accessToken` | Access Token | `Access Token:` |
-| `auth.accessTokenSecret` | Access Token Secret | `Access Token Secret:` |
+Add this exact redirect URI to the app's OAuth 2.0 settings, or the flow will fail:
 
-Run the interactive wizard:
+```
+http://127.0.0.1:8765/callback
+```
+
+Run the browser flow:
 
 ```bash
 finch auth
 ```
 
-It prompts for all four values (masked, no echo), makes **one live validation call**
-against X before writing anything, and only then saves `~/.finch/config` at `0600`.
-A typo'd key fails loudly (exit code 3) instead of leaving a broken config file
-behind. Re-running `finch auth` overwrites all four fields — there's no partial
+`finch auth` opens your system browser automatically, X shows a consent page, and
+Finch captures the authorization code on a short-lived local callback server at
+`http://127.0.0.1:8765/callback`. If your browser can't be opened automatically, the
+authorization URL is printed to stderr so you can paste it in manually.
+
+The Client ID is resolved in this order:
+
+1. `finch auth --client-id <id>`
+2. The `FINCH_OAUTH2_CLIENT_ID` environment variable
+3. An interactive `Client ID:` prompt (masked, no echo)
+
+The flow requests the full scope superset Finch needs: `tweet.read`, `tweet.write`,
+`users.read`, `like.write`, `follows.write`, `bookmark.read`, `bookmark.write`, and
+`offline.access`.
+
+Before anything is saved, Finch makes **one live validation call** to X. Only if that
+succeeds does it write `~/.finch/config` at `0600`. A denied or misconfigured Client
+ID / redirect URI fails loudly (exit code 3) instead of leaving a broken config file
+behind. Re-running `finch auth` overwrites the stored credentials — there's no partial
 update via the wizard (use `finch config set` for non-secret fields; see below).
 
 ```bash
@@ -98,18 +113,17 @@ finch auth status   # {configured, valid, username} — no wizard, just a status
 finch whoami         # {id, username, name} for the authenticated account
 ```
 
-Secrets are never echoed back: `finch config get auth.apiKey` masks all but the last
-4 characters, and no Finch error output ever includes a raw key.
+Secrets are never echoed back: `finch config get auth.accessToken` masks all but the
+last 4 characters, and no Finch error output ever includes a raw token.
 
-**CI / ephemeral machines** can skip the wizard and set credentials via environment
-variables instead (these take precedence over `~/.finch/config` when present):
+Token refresh is transparent. While you use Finch, access tokens are refreshed
+automatically using the stored refresh token; no user action is needed. If a refresh
+token expires or is revoked, Finch reports an auth error telling you to re-run
+`finch auth`.
 
-```bash
-export FINCH_API_KEY=...
-export FINCH_API_KEY_SECRET=...
-export FINCH_ACCESS_TOKEN=...
-export FINCH_ACCESS_TOKEN_SECRET=...
-```
+**Hard cutover:** if you have an old (pre-OAuth 2.0) `~/.finch/config` from before
+this migration, Finch will refuse to read it and report a clear error telling you to
+run `finch auth` again. There is no automatic migration — you must re-authenticate.
 
 ## Usage
 
@@ -242,11 +256,11 @@ instructions.
 ## Config
 
 ```bash
-finch config get auth.apiKey     # masked: shows only the last 4 characters
+finch config get auth.accessToken  # masked: shows only the last 4 characters
 finch config set defaults.count 25
-finch config path                # prints the resolved ~/.finch/config path
+finch config path                  # prints the resolved ~/.finch/config path
 ```
 
 Only `defaults.json` and `defaults.count` are settable via `finch config set` — the
-four `auth.*` fields are read-only outside the `finch auth` wizard, and always
-masked when read back.
+five `auth.*` fields (`clientId`, `accessToken`, `refreshToken`, `expiresAt`, `scopes`)
+are read-only outside the `finch auth` wizard, and always masked when read back.
