@@ -2,73 +2,168 @@ import { describe, test, expect } from "bun:test";
 import { runAuth, runAuthStatus } from "./auth";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
-import type { FinchConfig } from "../core/config";
+import type { FinchOAuth2Config } from "../core/oauth2-config";
+import type { OAuth2Token } from "@xdevplatform/xdk";
 
 const enteredAuth = { apiKey: "k", apiKeySecret: "ks", accessToken: "t", accessTokenSecret: "ts" };
 
+function fakeOAuth2Token(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
+  return {
+    access_token: "access-token",
+    token_type: "Bearer",
+    expires_in: 7200,
+    refresh_token: "refresh-token",
+    scope: "tweet.read tweet.write users.read like.write follows.write bookmark.read bookmark.write offline.access",
+    ...overrides,
+  };
+}
+
+function fakeOAuth2Client(
+  overrides: {
+    getAuthorizationUrl?: (state?: string) => Promise<string>;
+    exchangeCode?: (code: string) => Promise<OAuth2Token>;
+  } = {},
+): {
+  getAuthorizationUrl(state?: string): Promise<string>;
+  exchangeCode(code: string, codeVerifier?: string): Promise<OAuth2Token>;
+} {
+  return {
+    getAuthorizationUrl:
+      overrides.getAuthorizationUrl ?? (async (state) => `https://x.com/i/oauth2/authorize?state=${state}`),
+    exchangeCode: overrides.exchangeCode ?? (async () => fakeOAuth2Token()),
+  };
+}
+
+function fakeCallbackServer(code: string, state: string) {
+  return {
+    waitForCode: async () => ({ code, state }),
+    stop: () => {},
+  };
+}
+
+function oauth2AuthDeps(
+  overrides: {
+    readEnv?: (key: string) => string | undefined;
+    createOAuth2Client?: () => ReturnType<typeof fakeOAuth2Client>;
+    startCallbackServer?: (
+      redirectUri: string,
+      expectedState: string,
+    ) => Promise<{ waitForCode: () => Promise<{ code: string; state: string }>; stop: () => void }>;
+    createTransport?: (accessToken: string) => import("../core/transport").XTransport;
+    writeOAuth2Config?: (config: FinchOAuth2Config) => void;
+  } = {},
+) {
+  return {
+    readEnv: overrides.readEnv,
+    createOAuth2Client: overrides.createOAuth2Client ?? (() => fakeOAuth2Client()),
+    startCallbackServer:
+      overrides.startCallbackServer ??
+      (async (_redirectUri: string, expectedState: string) => fakeCallbackServer("callback-code", expectedState)),
+    openBrowser: async () => {},
+    createTransport: overrides.createTransport,
+    writeOAuth2Config: overrides.writeOAuth2Config,
+  };
+}
+
 describe("runAuth", () => {
-  test("validates then writes the config on success", async () => {
-    const written: { config: FinchConfig | null } = { config: null };
+  test("validates then writes the OAuth2 config on success", async () => {
+    const written: { config: FinchOAuth2Config | null } = { config: null };
     const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
     });
 
     const result = await runAuth({
-      promptCredentials: async () => enteredAuth,
-      transportFactory: () => transport,
-      readConfig: () => null,
-      writeConfig: (config) => {
-        written.config = config;
-      },
+      clientId: "client-id",
+      deps: oauth2AuthDeps({
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.config = config;
+        },
+      }),
     });
 
     expect(result.data).toEqual({ configured: true, username: "kelly" });
     expect(written.config).toEqual({
-      auth: enteredAuth,
-      transport: "byok",
+      auth: {
+        clientId: "client-id",
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+        expiresAt: expect.any(Number),
+        scopes: [
+          "tweet.read",
+          "tweet.write",
+          "users.read",
+          "like.write",
+          "follows.write",
+          "bookmark.read",
+          "bookmark.write",
+          "offline.access",
+        ],
+      },
+      transport: "oauth2",
       defaults: { json: false, count: 10 },
     });
   });
 
-  test("preserves existing defaults when re-run", async () => {
-    const written: { config: FinchConfig | null } = { config: null };
+  test("falls back to FINCH_OAUTH2_CLIENT_ID env var when no flag is provided", async () => {
+    const written: { clientId: string | null } = { clientId: null };
     const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
     });
 
     await runAuth({
-      promptCredentials: async () => enteredAuth,
-      transportFactory: () => transport,
-      readConfig: () => ({
-        auth: { apiKey: "old", apiKeySecret: "old", accessToken: "old", accessTokenSecret: "old" },
-        transport: "byok",
-        defaults: { json: true, count: 25 },
+      deps: oauth2AuthDeps({
+        readEnv: (key) => (key === "FINCH_OAUTH2_CLIENT_ID" ? "env-client-id" : undefined),
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.clientId = config.auth.clientId;
+        },
       }),
-      writeConfig: (config) => {
-        written.config = config;
-      },
     });
 
-    expect(written.config?.defaults).toEqual({ json: true, count: 25 });
-    expect(written.config?.auth).toEqual(enteredAuth);
+    expect(written.clientId).toBe("env-client-id");
+  });
+
+  test("throws and does not write the config on CSRF state mismatch", async () => {
+    let writeCalled = false;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+
+    await expect(
+      runAuth({
+        clientId: "client-id",
+        deps: oauth2AuthDeps({
+          createTransport: () => transport,
+          startCallbackServer: async (_redirectUri, expectedState) =>
+            fakeCallbackServer("callback-code", `not-${expectedState}`),
+          writeOAuth2Config: () => {
+            writeCalled = true;
+          },
+        }),
+      }),
+    ).rejects.toThrow(FinchError);
+
+    expect(writeCalled).toBe(false);
   });
 
   test("does not write the config when validation fails", async () => {
     let writeCalled = false;
     const transport = fakeTransport({
       getMe: async () => {
-        throw new FinchError("AUTH_ERROR", "X rejected the provided credentials");
+        throw new FinchError("AUTH_ERROR", "X rejected the token");
       },
     });
 
     await expect(
       runAuth({
-        promptCredentials: async () => enteredAuth,
-        transportFactory: () => transport,
-        readConfig: () => null,
-        writeConfig: () => {
-          writeCalled = true;
-        },
+        clientId: "client-id",
+        deps: oauth2AuthDeps({
+          createTransport: () => transport,
+          writeOAuth2Config: () => {
+            writeCalled = true;
+          },
+        }),
       }),
     ).rejects.toThrow(FinchError);
 

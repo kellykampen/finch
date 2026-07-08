@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { FinchError, exitCodeForError } from "./core/errors";
-import { runAuth, runAuthStatus } from "./commands/auth";
+import { runAuth, runAuthStatus, parseClientIdFlag } from "./commands/auth";
 import { runWhoami } from "./commands/whoami";
 import { runPost } from "./commands/post";
 import { runReply } from "./commands/reply";
@@ -28,7 +28,7 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runAuthStatus();
   }
   if (cmd === "auth") {
-    return runAuth();
+    return runAuth({ clientId: parseClientIdFlag(args.slice(1)) });
   }
   if (cmd === "whoami") {
     return runWhoami();
