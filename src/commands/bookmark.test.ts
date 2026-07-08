@@ -55,6 +55,21 @@ describe("runBookmarkList", () => {
     expect(capturedCount).toBe(25);
   });
 
+  test("passes --count through as an alias for -n", async () => {
+    let capturedCount: number | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      listBookmarks: async (_userId, count) => {
+        capturedCount = count;
+        return [];
+      },
+    });
+
+    await runBookmarkList(["--count", "25"], { getTransport: () => transport, getConfig: () => fakeConfig(10) });
+
+    expect(capturedCount).toBe(25);
+  });
+
   test("uses the configured default count when -n is omitted", async () => {
     let capturedCount: number | undefined;
     const transport = fakeTransport({
@@ -68,6 +83,21 @@ describe("runBookmarkList", () => {
     await runBookmarkList([], { getTransport: () => transport, getConfig: () => fakeConfig(7) });
 
     expect(capturedCount).toBe(7);
+  });
+
+  test("clamps an oversized configured default count to the API max", async () => {
+    let capturedCount: number | undefined;
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "42", username: "kelly", name: "Kelly" }),
+      listBookmarks: async (_userId, count) => {
+        capturedCount = count;
+        return [];
+      },
+    });
+
+    await runBookmarkList([], { getTransport: () => transport, getConfig: () => fakeConfig(500) });
+
+    expect(capturedCount).toBe(100);
   });
 
   test("falls back to 10 when no configured default count exists", async () => {

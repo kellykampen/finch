@@ -162,7 +162,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   {
     name: "bookmark list",
     description: "Fetch the authenticated user's bookmarked posts.",
-    flags: ["--json", "-n <count>"],
+    flags: ["--json", "-n <count>", "--count <count>"],
     positionals: [],
     endpoint: "GET /2/users/:id/bookmarks",
     dataShape: "{ posts: [{ id, text, author_id, created_at }] }",

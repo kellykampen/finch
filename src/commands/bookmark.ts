@@ -25,12 +25,13 @@ export async function runBookmarkList(
   const config = getConfig();
   const configuredDefault = config?.defaults?.count;
   const defaultCount =
-    configuredDefault !== undefined && configuredDefault >= 1 && configuredDefault <= MAX_COUNT
-      ? configuredDefault
+    typeof configuredDefault === "number" && Number.isInteger(configuredDefault) && configuredDefault >= 1
+      ? Math.min(configuredDefault, MAX_COUNT)
       : DEFAULT_COUNT;
 
-  const { values } = parseArgs(argv, { valueFlags: ["-n"] });
-  const count = resolveCount(values["-n"], defaultCount);
+  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count"] });
+  const countFlag = values["-n"] !== undefined ? "-n" : "--count";
+  const count = resolveCount(values["-n"] ?? values["--count"], defaultCount, countFlag);
 
   const posts = await transport.listBookmarks(me.id, count);
   return { data: { posts }, human: formatPosts(posts) };
