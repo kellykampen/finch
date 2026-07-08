@@ -320,6 +320,69 @@ describe("ByokTransport.searchRecent", () => {
 
     expect(await transport.searchRecent("nothing", 10)).toEqual([]);
   });
+
+  test("maps a 429 ApiError to RATE_LIMITED with resetAt", async () => {
+    const resetUnixSeconds = 1735689600; // 2025-01-01T00:00:00.000Z
+    const headers = new Headers({ "x-rate-limit-reset": String(resetUnixSeconds) });
+    const transport = new ByokTransport(unusedUsersClient, {
+      ...unusedPostsClient,
+      searchRecent: async () => {
+        throw new ApiError("Too Many Requests", 429, "Too Many Requests", headers, null);
+      },
+    });
+
+    try {
+      await transport.searchRecent("hello", 10);
+      throw new Error("expected searchRecent to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("RATE_LIMITED");
+      expect((err as FinchError).detail).toEqual({ resetAt: "2025-01-01T00:00:00.000Z" });
+    }
+  });
+
+  test("maps a free-tier search 403 ApiError to CLIENT_ERROR", async () => {
+    const transport = new ByokTransport(unusedUsersClient, {
+      ...unusedPostsClient,
+      searchRecent: async () => {
+        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+          title: "Client Forbidden",
+          detail: "This client is not allowed to perform this operation.",
+          type: "https://api.twitter.com/2/problems/client-forbidden",
+          status: 403,
+          reason: "search-access-level",
+        });
+      },
+    });
+
+    try {
+      await transport.searchRecent("hello", 10);
+      throw new Error("expected searchRecent to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      expect((err as FinchError).message).toBe("Your X API tier does not include search access.");
+    }
+  });
+
+  test("maps a non-tier 403 ApiError to AUTH_ERROR", async () => {
+    const transport = new ByokTransport(unusedUsersClient, {
+      ...unusedPostsClient,
+      searchRecent: async () => {
+        throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), {
+          detail: "some other credentials issue",
+        });
+      },
+    });
+
+    try {
+      await transport.searchRecent("hello", 10);
+      throw new Error("expected searchRecent to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+    }
+  });
 });
 
 describe("ByokTransport.userTweets", () => {

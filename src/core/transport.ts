@@ -355,6 +355,9 @@ export class ByokTransport implements XTransport {
 function mapSdkError(err: unknown): FinchError {
   if (err instanceof ApiError) {
     if (err.status === 401 || err.status === 403) {
+      if (isSearchTierForbidden(err)) {
+        return new FinchError("CLIENT_ERROR", "Your X API tier does not include search access.", err.data ?? null);
+      }
       return new FinchError("AUTH_ERROR", "X rejected the provided credentials", err.data ?? null);
     }
     if (err.status === 429) {
@@ -366,6 +369,30 @@ function mapSdkError(err: unknown): FinchError {
   }
   const message = err instanceof Error ? err.message : String(err);
   return new FinchError("NETWORK_ERROR", message, null);
+}
+
+/**
+ * Detects X's free/basic-tier search restriction. The X API returns a 403
+ * with `reason: "search-access-level"` (or similar search/access language in
+ * the error body) when the app tier does not include the recent-search
+ * endpoint. This must be surfaced as a CLIENT_ERROR so the caller understands
+ * the limit rather than seeing a generic auth/credential failure.
+ */
+function isSearchTierForbidden(err: ApiError): boolean {
+  if (err.status !== 403) return false;
+  const haystack = stringifyErrorData(err.data);
+  if (haystack.includes("search-access-level")) return true;
+  return haystack.includes("search") && /access|tier|enroll/.test(haystack);
+}
+
+function stringifyErrorData(data: unknown): string {
+  if (data === null || data === undefined) return "";
+  if (typeof data === "string") return data.toLowerCase();
+  try {
+    return JSON.stringify(data).toLowerCase();
+  } catch {
+    return String(data).toLowerCase();
+  }
 }
 
 function parseRateLimitReset(headers: Headers): string | null {
