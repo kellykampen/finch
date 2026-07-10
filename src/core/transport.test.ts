@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ApiError, type OAuth2Token } from "@xdevplatform/xdk";
-import { ByokTransport, createRefreshingOAuth2Transport } from "./transport";
+import { ByokTransport, createOAuth2Transport, createRefreshingOAuth2Transport } from "./transport";
 import { FinchError } from "./errors";
 import { fakeTransport } from "./transport.fixtures";
 import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
@@ -2064,5 +2064,65 @@ describe("createRefreshingOAuth2Transport", () => {
     await transport.getMe();
 
     expect(buildCount).toBe(1);
+  });
+});
+
+describe("createOAuth2Transport", () => {
+  test("wires the underlying XDK client as the raw client", () => {
+    const transport = createOAuth2Transport("user-context-token") as ByokTransport;
+    const rawClient = (transport as unknown as { rawClient: { accessToken?: string; bearerToken?: string } }).rawClient;
+
+    expect(rawClient).toBeDefined();
+    expect(rawClient.accessToken).toBe("user-context-token");
+    expect(rawClient.bearerToken).toBeUndefined();
+  });
+
+  test("sends the user-context bearer token when creating an article draft", async () => {
+    const transport = createOAuth2Transport("user-context-token") as ByokTransport;
+    const rawClient = (
+      transport as unknown as {
+        rawClient: {
+          httpClient: {
+            request: (
+              url: string,
+              options: { method?: string; headers?: Headers; body?: string; signal?: AbortSignal; timeout?: number },
+            ) => Promise<unknown>;
+          };
+        };
+      }
+    ).rawClient;
+
+    let captured: { url?: string; authorization?: string } = {};
+    const originalRequest = rawClient.httpClient.request.bind(rawClient.httpClient);
+    rawClient.httpClient.request = async (
+      url: string,
+      options: { method?: string; headers?: Headers; body?: string; signal?: AbortSignal; timeout?: number },
+    ) => {
+      const headers = new Headers(options.headers);
+      captured = {
+        url,
+        authorization: headers.get("authorization") ?? undefined,
+      };
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: new Headers({ "content-type": "application/json" }),
+        url,
+        json: async () => ({ data: { id: "draft-123" } }),
+        text: async () => "",
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    };
+
+    try {
+      const result = await transport.createArticleDraft("Test", { blocks: [], entities: [] });
+
+      expect(result).toEqual({ id: "draft-123" });
+      expect(captured.url).toBe("https://api.x.com/2/articles/draft");
+      expect(captured.authorization).toBe("Bearer user-context-token");
+    } finally {
+      rawClient.httpClient.request = originalRequest;
+    }
   });
 });
