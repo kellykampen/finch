@@ -60,6 +60,7 @@ function fakeCallbackServer(code: string, state: string) {
 function oauth2AuthDeps(
   overrides: {
     readEnv?: (key: string) => string | undefined;
+    readOAuth2Config?: () => FinchOAuth2Config | null;
     promptClientId?: () => Promise<string>;
     createOAuth2Client?: (config: {
       clientId: string;
@@ -76,6 +77,7 @@ function oauth2AuthDeps(
 ) {
   return {
     readEnv: overrides.readEnv,
+    readOAuth2Config: overrides.readOAuth2Config,
     promptClientId: overrides.promptClientId,
     createOAuth2Client: overrides.createOAuth2Client ?? (() => fakeOAuth2Client()),
     startCallbackServer:
@@ -239,6 +241,120 @@ describe("runAuth", () => {
     });
 
     expect(written.clientId).toBe("env-client-id");
+  });
+
+  // FIN-62: an operator reported having to re-enter the Client ID on every
+  // `finch auth`. The Client ID is durable, non-secret app metadata already
+  // stored in ~/.finch/config — re-auth must reuse it instead of dropping to
+  // an interactive prompt, so re-authenticating is a one-command action.
+  test("reuses the persisted client ID from ~/.finch/config when no flag or env var is provided", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { clientId: string | null } = { clientId: null };
+
+    const result = await runAuth({
+      deps: oauth2AuthDeps({
+        readOAuth2Config: () => fakeOAuth2Config,
+        // The prompt must never be reached when a Client ID is already on disk.
+        promptClientId: () =>
+          Promise.reject(new Error("promptClientId should not be invoked when a client ID is persisted in config")),
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.clientId = config.auth.clientId;
+        },
+      }),
+    });
+
+    expect(result.data).toEqual({ configured: true, username: "kelly" });
+    expect(written.clientId).toBe("client-id");
+  });
+
+  test("prefers the --client-id flag over a persisted client ID", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { clientId: string | null } = { clientId: null };
+
+    await runAuth({
+      clientId: "flag-client-id",
+      deps: oauth2AuthDeps({
+        readOAuth2Config: () => fakeOAuth2Config,
+        promptClientId: rejectingPromptClientId(),
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.clientId = config.auth.clientId;
+        },
+      }),
+    });
+
+    expect(written.clientId).toBe("flag-client-id");
+  });
+
+  test("prefers FINCH_OAUTH2_CLIENT_ID over a persisted client ID", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { clientId: string | null } = { clientId: null };
+
+    await runAuth({
+      deps: oauth2AuthDeps({
+        readEnv: (key) => (key === "FINCH_OAUTH2_CLIENT_ID" ? "env-client-id" : undefined),
+        readOAuth2Config: () => fakeOAuth2Config,
+        promptClientId: rejectingPromptClientId(),
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.clientId = config.auth.clientId;
+        },
+      }),
+    });
+
+    expect(written.clientId).toBe("env-client-id");
+  });
+
+  test("falls back to the interactive prompt when config has no persisted client ID", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { clientId: string | null } = { clientId: null };
+
+    await runAuth({
+      deps: oauth2AuthDeps({
+        readOAuth2Config: () => null,
+        promptClientId: async () => "prompted-client-id",
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.clientId = config.auth.clientId;
+        },
+      }),
+    });
+
+    expect(written.clientId).toBe("prompted-client-id");
+  });
+
+  test("falls back to the prompt when the persisted config is legacy/corrupt (readOAuth2Config throws)", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { clientId: string | null } = { clientId: null };
+
+    // A pre-OAuth2 (apiKey) or malformed config makes readOAuth2Config throw.
+    // `finch auth` is the hard-cutover recovery path (PLAN.md), so it must not
+    // be broken by an unreadable config — it should reach the prompt instead.
+    await runAuth({
+      deps: oauth2AuthDeps({
+        readOAuth2Config: () => {
+          throw new FinchError("AUTH_ERROR", "Finch now uses OAuth 2.0 — run `finch auth`", null);
+        },
+        promptClientId: async () => "prompted-client-id",
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.clientId = config.auth.clientId;
+        },
+      }),
+    });
+
+    expect(written.clientId).toBe("prompted-client-id");
   });
 
   // FIN-59: an operator reported `finch auth --client-id ...` still prompting
