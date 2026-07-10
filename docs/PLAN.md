@@ -113,7 +113,14 @@ The Client ID is resolved in this order:
 
 1. `finch auth --client-id <id>`
 2. The `FINCH_OAUTH2_CLIENT_ID` environment variable
-3. An interactive `Client ID:` prompt (masked, no echo)
+3. The Client ID already stored in `~/.finch/config` (from a previous `finch auth`)
+4. An interactive `Client ID:` prompt (masked, no echo)
+
+Step 3 means re-authenticating is a **one-command** action: enter the Client ID once,
+and every later `finch auth` (e.g. after the refresh token finally expires) reuses the
+stored, non-secret Client ID automatically instead of re-prompting. A `--client-id` flag
+or the env var still override it. If no config exists yet, or it is a legacy/corrupt file,
+resolution falls through to the prompt.
 
 The flow requests the full scope superset Finch needs: `tweet.read`, `tweet.write`,
 `users.read`, `like.write`, `follows.write`, `bookmark.read`, `bookmark.write`, and

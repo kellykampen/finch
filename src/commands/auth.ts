@@ -53,6 +53,7 @@ interface CallbackServerLike {
 export interface OAuth2AuthDeps {
   clientId?: string;
   readEnv?: (key: string) => string | undefined;
+  readOAuth2Config?: () => FinchOAuth2Config | null;
   promptClientId?: () => Promise<string>;
   createOAuth2Client?: (config: { clientId: string; redirectUri: string; scope: string[] }) => OAuth2ClientLike;
   startCallbackServer?: (redirectUri: string, expectedState: string) => Promise<CallbackServerLike>;
@@ -79,7 +80,25 @@ async function resolveClientId(deps: OAuth2AuthDeps): Promise<string> {
   if (deps.clientId) return deps.clientId;
   const envClientId = deps.readEnv?.("FINCH_OAUTH2_CLIENT_ID") ?? process.env.FINCH_OAUTH2_CLIENT_ID;
   if (envClientId) return envClientId;
+  // The Client ID is durable, non-secret X app metadata that never changes.
+  // Reuse the one already stored in ~/.finch/config so re-authenticating after
+  // a session ends is a one-command action — an operator should never have to
+  // re-type it just because the refresh token finally expired (FIN-62).
+  const persistedClientId = readPersistedClientId(deps);
+  if (persistedClientId) return persistedClientId;
   return await (deps.promptClientId ?? promptClientIdInteractive)();
+}
+
+// Best-effort read of the stored Client ID. `finch auth` is also the recovery
+// path for a legacy (pre-OAuth2) or corrupt config, both of which make
+// readOAuth2Config throw — so a failed read must fall through to the prompt
+// rather than break re-authentication (PLAN.md hard-cutover note).
+function readPersistedClientId(deps: OAuth2AuthDeps): string | undefined {
+  try {
+    return (deps.readOAuth2Config ?? readOAuth2Config)()?.auth?.clientId || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function createRealOAuth2Client(config: { clientId: string; redirectUri: string; scope: string[] }): OAuth2ClientLike {
