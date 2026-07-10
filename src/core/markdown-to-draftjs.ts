@@ -39,7 +39,7 @@ interface ParsedInlineStyleRange {
 export interface EntityRange {
   offset: number;
   length: number;
-  key: number;
+  key: string;
 }
 
 interface ParsedEntityRange {
@@ -509,7 +509,7 @@ function toArticleContentState(
   parsedEntities: Record<string, ParsedEntity>,
 ): ContentState {
   const linkEntries = Object.entries(parsedEntities).filter(([, entity]) => entity.type === "LINK");
-  const linkIndexByParsedKey = new Map(linkEntries.map(([parsedKey], index) => [parsedKey, index]));
+  const linkIndexByParsedKey = new Map(linkEntries.map(([parsedKey], index) => [parsedKey, String(index)]));
 
   const entities: ArticleEntity[] = linkEntries.map(([, entity], index) => ({
     key: String(index),

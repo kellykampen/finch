@@ -48,7 +48,7 @@ async function createDraftFromMarkdown(
 
 /**
  * `finch article draft <title> <markdown-file-path>`: convert a markdown file
- * to a DraftJS content_state and create an article draft on X. An optional
+ * to an X Articles API content_state and create an article draft on X. An optional
  * `--cover <path>` image is uploaded first and attached to the draft.
  */
 export async function runArticleDraft(

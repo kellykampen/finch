@@ -35,7 +35,7 @@ describe("markdownToContentState", () => {
             mentions: [{ from_index: 10, to_index: 16, text: "@finch" }],
             hashtags: [{ from_index: 17, to_index: 26, text: "#articles" }],
           },
-          entity_ranges: [{ offset: 5, length: 4, key: 0 }],
+          entity_ranges: [{ offset: 5, length: 4, key: "0" }],
           inline_style_ranges: [{ offset: 0, length: 4, style: "bold" }],
         },
       ],
@@ -82,6 +82,16 @@ describe("markdownToContentState", () => {
       ],
       entities: [],
     });
+  });
+
+  test("degrades heading levels four through six to header-three", () => {
+    const contentState = convert("#### Four\n##### Five\n###### Six");
+
+    expect(contentState.blocks.map(({ text, type }) => ({ text, type }))).toEqual([
+      { text: "Four", type: "header-three" },
+      { text: "Five", type: "header-three" },
+      { text: "Six", type: "header-three" },
+    ]);
   });
 
   test("converts inline bold italic and strikethrough ranges", () => {
@@ -222,7 +232,7 @@ describe("markdownToContentState", () => {
             mentions: [{ from_index: 14, to_index: 24, text: "@finch_cli" }],
             hashtags: [{ from_index: 25, to_index: 34, text: "#articles" }],
           },
-          entity_ranges: [{ offset: 3, length: 5, key: 0 }],
+          entity_ranges: [{ offset: 3, length: 5, key: "0" }],
           inline_style_ranges: [],
         },
       ],
@@ -239,6 +249,30 @@ describe("markdownToContentState", () => {
     });
   });
 
+  test("renumbers multiple links consistently with matching string entity keys", () => {
+    const contentState = convert(
+      "[First](https://first.example) and [Second](https://second.example) then [Third](https://third.example)",
+    );
+
+    expect(contentState.entities.map(({ key }) => key)).toEqual(["0", "1", "2"]);
+    expect(contentState.blocks[0]?.entity_ranges.map(({ key }) => key)).toEqual(["0", "1", "2"]);
+    for (const range of contentState.blocks[0]?.entity_ranges ?? []) {
+      expect(typeof range.key).toBe("string");
+      expect(contentState.entities.some((entity) => entity.key === range.key)).toBe(true);
+    }
+  });
+
+  test("emits mentions and hashtags as metadata without link entities", () => {
+    const contentState = convert("Hello @finch and #articles");
+
+    expect(contentState.entities).toEqual([]);
+    expect(contentState.blocks[0]?.entity_ranges).toEqual([]);
+    expect(contentState.blocks[0]?.data).toEqual({
+      mentions: [{ from_index: 6, to_index: 12, text: "@finch" }],
+      hashtags: [{ from_index: 17, to_index: 26, text: "#articles" }],
+    });
+  });
+
   test("supports inline styles inside link text", () => {
     expect(convert("Read [**Finch** docs](https://example.com/docs).")).toEqual({
       blocks: [
@@ -247,7 +281,7 @@ describe("markdownToContentState", () => {
           text: "Read Finch docs.",
           type: "unstyled",
           data: {},
-          entity_ranges: [{ offset: 5, length: 10, key: 0 }],
+          entity_ranges: [{ offset: 5, length: 10, key: "0" }],
           inline_style_ranges: [{ offset: 5, length: 5, style: "bold" }],
         },
       ],
