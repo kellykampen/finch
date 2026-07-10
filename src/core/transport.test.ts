@@ -676,6 +676,9 @@ describe("ByokTransport.setMediaAltText", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe(
+        "X denied media upload. The v2 media endpoints require OAuth2 user context with media.write. Run `finch auth` to re-authorize; if `finch config get auth.scopes` already includes media.write, verify your X app has v2 media endpoint access.",
+      );
     }
   });
 });

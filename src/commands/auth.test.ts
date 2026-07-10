@@ -144,6 +144,33 @@ describe("runAuth", () => {
     expect(requestedScopes).toContain("media.write");
   });
 
+  test("stores requested scopes including media.write when the token response omits scope", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    let requestedScopes: string[] = [];
+    let writtenScopes: string[] = [];
+
+    await runAuth({
+      clientId: "client-id",
+      deps: oauth2AuthDeps({
+        createOAuth2Client: (config) => {
+          requestedScopes = config.scope;
+          return fakeOAuth2Client({
+            exchangeCode: async () => fakeOAuth2Token({ scope: undefined }),
+          });
+        },
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          writtenScopes = config.auth.scopes;
+        },
+      }),
+    });
+
+    expect(writtenScopes).toEqual(requestedScopes);
+    expect(writtenScopes).toContain("media.write");
+  });
+
   test("generates PKCE parameters, sets them before building the authorization URL, and passes the verifier on exchange", async () => {
     const transport = fakeTransport({
       getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
