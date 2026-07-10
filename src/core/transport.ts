@@ -995,6 +995,7 @@ export function createOAuth2Transport(accessToken: string): XTransport {
     client.users as unknown as UsersClientLike,
     client.posts as unknown as PostsClientLike,
     client.media as unknown as MediaClientLike,
+    client as unknown as UnderlyingClientLike,
   );
 }
 
