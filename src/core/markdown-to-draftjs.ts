@@ -1,21 +1,15 @@
 /**
- * Pure markdown -> DraftJS `content_state` converter.
+ * Pure markdown -> X Articles API `content_state` converter.
  *
- * Design notes:
- * - Hand-rolled, line-oriented parser for the bounded markdown subset required by
- *   FIN-38. No external markdown dependency was added because the supported
- *   surface (headings, paragraphs, bold/italic/strike, lists, blockquotes, links,
- *   mentions, hashtags) is small enough that a focused parser keeps the diff and
- *   dependency tree minimal.
- * - Entity type names: DraftJS has a canonical "LINK" entity. It does *not*
- *   define canonical names for mentions/hashtags, so this module uses "MENTION"
- *   and "HASHTAG" (uppercase, matching the LINK convention). Data payloads are
- *   `{ username }` and `{ hashtag }` respectively, with the leading `@`/`#`
- *   included in the displayed text covered by the entity range.
- * - Graceful degradation: unsupported markdown (tables, fenced code blocks,
- *   images, footnotes, raw HTML, inline code) never throws. Fenced code becomes
- *   a plain unstyled block; inline code and image alt text become plain text;
- *   everything else is emitted as literal text.
+ * X accepts a DraftJS-derived wire format rather than DraftJS's native JSON:
+ * block range fields are snake_case, inline styles and entity values are
+ * lowercase, entities are an array, and list nesting depth is not part of the
+ * API schema. Mentions and hashtags are represented as block data spans.
+ *
+ * Unsupported markdown never throws. Fenced code becomes a plain unstyled
+ * block; inline code and image alt text become plain text; everything else is
+ * emitted as literal text. Heading levels 4-6 degrade to header-three because
+ * the Articles API currently supports only header-one through header-three.
  */
 
 export type DraftBlockType =
@@ -23,16 +17,20 @@ export type DraftBlockType =
   | "header-one"
   | "header-two"
   | "header-three"
-  | "header-four"
-  | "header-five"
-  | "header-six"
   | "unordered-list-item"
   | "ordered-list-item"
   | "blockquote";
 
 export type InlineStyle = "BOLD" | "ITALIC" | "STRIKETHROUGH";
+export type ArticleInlineStyle = "bold" | "italic" | "strikethrough";
 
 export interface InlineStyleRange {
+  offset: number;
+  length: number;
+  style: ArticleInlineStyle;
+}
+
+interface ParsedInlineStyleRange {
   offset: number;
   length: number;
   style: InlineStyle;
@@ -44,26 +42,59 @@ export interface EntityRange {
   key: string;
 }
 
+interface ParsedEntityRange {
+  offset: number;
+  length: number;
+  key: string;
+}
+
+export interface ArticleDataSpan {
+  from_index: number;
+  to_index: number;
+  text: string;
+}
+
 export interface DraftBlock {
   key: string;
   text: string;
   type: DraftBlockType;
-  depth: number;
-  inlineStyleRanges: InlineStyleRange[];
-  entityRanges: EntityRange[];
+  data: {
+    mentions?: ArticleDataSpan[];
+    hashtags?: ArticleDataSpan[];
+  };
+  entity_ranges: EntityRange[];
+  inline_style_ranges: InlineStyleRange[];
 }
 
-export type EntityType = "LINK" | "MENTION" | "HASHTAG";
+interface ParsedDraftBlock {
+  key: string;
+  text: string;
+  type: DraftBlockType;
+  depth: number;
+  inlineStyleRanges: ParsedInlineStyleRange[];
+  entityRanges: ParsedEntityRange[];
+}
 
-export interface Entity {
-  type: EntityType;
+type ParsedEntityType = "LINK" | "MENTION" | "HASHTAG";
+
+interface ParsedEntity {
+  type: ParsedEntityType;
   mutability: "MUTABLE";
   data: Record<string, unknown>;
 }
 
+export interface ArticleEntity {
+  key: string;
+  value: {
+    type: "link";
+    mutability: "mutable";
+    data: { url: string };
+  };
+}
+
 export interface ContentState {
   blocks: DraftBlock[];
-  entities: Record<string, Entity>;
+  entities: ArticleEntity[];
 }
 
 export interface MarkdownToContentStateOptions {
@@ -94,9 +125,15 @@ const HEADER_TYPES: Record<number, DraftBlockType> = {
   1: "header-one",
   2: "header-two",
   3: "header-three",
-  4: "header-four",
-  5: "header-five",
-  6: "header-six",
+  4: "header-three",
+  5: "header-three",
+  6: "header-three",
+};
+
+const ARTICLE_STYLE_BY_PARSED_STYLE: Record<InlineStyle, ArticleInlineStyle> = {
+  BOLD: "bold",
+  ITALIC: "italic",
+  STRIKETHROUGH: "strikethrough",
 };
 
 function createDefaultGenerateKey(): () => string {
@@ -137,9 +174,9 @@ function parseInline(
   getKey: () => string,
   inheritedStyles: Iterable<InlineStyle> = [],
   inheritedEntityKey?: string,
-): { chars: CharStyle[]; entities: Record<string, Entity> } {
+): { chars: CharStyle[]; entities: Record<string, ParsedEntity> } {
   const chars: CharStyle[] = [];
-  const entities: Record<string, Entity> = {};
+  const entities: Record<string, ParsedEntity> = {};
   const activeStyles = new Set<InlineStyle>(inheritedStyles);
   let i = 0;
 
@@ -239,8 +276,8 @@ function parseInline(
   return { chars, entities };
 }
 
-function buildStyleRanges(chars: CharStyle[]): InlineStyleRange[] {
-  const ranges: InlineStyleRange[] = [];
+function buildStyleRanges(chars: CharStyle[]): ParsedInlineStyleRange[] {
+  const ranges: ParsedInlineStyleRange[] = [];
   for (const style of ["BOLD", "ITALIC", "STRIKETHROUGH"] as InlineStyle[]) {
     let start: number | undefined;
     for (let index = 0; index <= chars.length; index++) {
@@ -256,8 +293,8 @@ function buildStyleRanges(chars: CharStyle[]): InlineStyleRange[] {
   return ranges.sort((a, b) => a.offset - b.offset || a.length - b.length);
 }
 
-function buildEntityRanges(chars: CharStyle[]): EntityRange[] {
-  const ranges: EntityRange[] = [];
+function buildEntityRanges(chars: CharStyle[]): ParsedEntityRange[] {
+  const ranges: ParsedEntityRange[] = [];
   let currentKey: string | undefined;
   let start = 0;
   for (let index = 0; index <= chars.length; index++) {
@@ -376,9 +413,9 @@ function classifyLine(line: string): ClassifiedLine | null {
 
 interface InlineParseResult {
   text: string;
-  inlineStyleRanges: InlineStyleRange[];
-  entityRanges: EntityRange[];
-  entities: Record<string, Entity>;
+  inlineStyleRanges: ParsedInlineStyleRange[];
+  entityRanges: ParsedEntityRange[];
+  entities: Record<string, ParsedEntity>;
 }
 
 function parseInlineBlock(content: string, getKey: () => string): InlineParseResult {
@@ -393,8 +430,8 @@ function parseInlineBlock(content: string, getKey: () => string): InlineParseRes
 }
 
 interface BuiltBlock {
-  block: DraftBlock;
-  entities: Record<string, Entity>;
+  block: ParsedDraftBlock;
+  entities: Record<string, ParsedEntity>;
 }
 
 function buildBlock(type: DraftBlockType, depth: number, content: string, getKey: () => string): BuiltBlock {
@@ -415,9 +452,9 @@ function buildBlock(type: DraftBlockType, depth: number, content: string, getKey
 function buildBlocks(
   segments: LineSegment[],
   getKey: () => string,
-): { blocks: DraftBlock[]; entities: Record<string, Entity> } {
-  const blocks: DraftBlock[] = [];
-  const entities: Record<string, Entity> = {};
+): { blocks: ParsedDraftBlock[]; entities: Record<string, ParsedEntity> } {
+  const blocks: ParsedDraftBlock[] = [];
+  const entities: Record<string, ParsedEntity> = {};
   let paragraphBuffer: string[] = [];
 
   const flushParagraph = (): void => {
@@ -459,13 +496,70 @@ function buildBlocks(
   return { blocks, entities };
 }
 
-/**
- * Convert a markdown string into a DraftJS-compatible content_state object.
- */
+function spanFromRange(block: ParsedDraftBlock, range: ParsedEntityRange): ArticleDataSpan {
+  return {
+    from_index: range.offset,
+    to_index: range.offset + range.length,
+    text: block.text.slice(range.offset, range.offset + range.length),
+  };
+}
+
+function toArticleContentState(
+  parsedBlocks: ParsedDraftBlock[],
+  parsedEntities: Record<string, ParsedEntity>,
+): ContentState {
+  const linkEntries = Object.entries(parsedEntities).filter(([, entity]) => entity.type === "LINK");
+  const linkIndexByParsedKey = new Map(linkEntries.map(([parsedKey], index) => [parsedKey, String(index)]));
+
+  const entities: ArticleEntity[] = linkEntries.map(([, entity], index) => ({
+    key: String(index),
+    value: {
+      type: "link",
+      mutability: "mutable",
+      data: { url: String(entity.data.url ?? "") },
+    },
+  }));
+
+  const blocks = parsedBlocks.map((block): DraftBlock => {
+    const data: DraftBlock["data"] = {};
+    const entityRanges: EntityRange[] = [];
+
+    for (const range of block.entityRanges) {
+      const entity = parsedEntities[range.key];
+      if (entity?.type === "LINK") {
+        const key = linkIndexByParsedKey.get(range.key);
+        if (key !== undefined) entityRanges.push({ offset: range.offset, length: range.length, key });
+      } else if (entity?.type === "MENTION") {
+        data.mentions ??= [];
+        data.mentions.push(spanFromRange(block, range));
+      } else if (entity?.type === "HASHTAG") {
+        data.hashtags ??= [];
+        data.hashtags.push(spanFromRange(block, range));
+      }
+    }
+
+    return {
+      key: block.key,
+      text: block.text,
+      type: block.type,
+      data,
+      entity_ranges: entityRanges,
+      inline_style_ranges: block.inlineStyleRanges.map((range) => ({
+        offset: range.offset,
+        length: range.length,
+        style: ARTICLE_STYLE_BY_PARSED_STYLE[range.style],
+      })),
+    };
+  });
+
+  return { blocks, entities };
+}
+
+/** Convert markdown into the schema accepted by `POST /2/articles/draft`. */
 export function markdownToContentState(markdown: string, options: MarkdownToContentStateOptions = {}): ContentState {
   const getKey = options.generateKey ?? createDefaultGenerateKey();
   const normalized = markdown.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const segments = splitByCodeFences(normalized);
   const { blocks, entities } = buildBlocks(segments, getKey);
-  return { blocks, entities };
+  return toArticleContentState(blocks, entities);
 }
