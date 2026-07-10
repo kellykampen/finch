@@ -1253,7 +1253,7 @@ describe("ByokTransport.createArticleDraft", () => {
       unusedMediaClient,
     );
 
-    const contentState = { blocks: [], entities: {} };
+    const contentState = { blocks: [], entities: [] };
     const result = await transport.createArticleDraft("My Article", contentState);
 
     expect(result).toEqual({ id: "article-1" });
@@ -1281,7 +1281,7 @@ describe("ByokTransport.createArticleDraft", () => {
       unusedMediaClient,
     );
 
-    const contentState = { blocks: [], entities: {} };
+    const contentState = { blocks: [], entities: [] };
     await transport.createArticleDraft("Covered Article", contentState, "media-123");
 
     const body = JSON.parse((capturedRequest[2] as { body: string }).body);
@@ -1303,7 +1303,7 @@ describe("ByokTransport.createArticleDraft", () => {
     );
 
     try {
-      await transport.createArticleDraft("Bad Article", { blocks: [], entities: {} });
+      await transport.createArticleDraft("Bad Article", { blocks: [], entities: [] });
       throw new Error("expected createArticleDraft to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
@@ -1315,7 +1315,7 @@ describe("ByokTransport.createArticleDraft", () => {
     const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, unusedMediaClient);
 
     try {
-      await transport.createArticleDraft("No Client", { blocks: [], entities: {} });
+      await transport.createArticleDraft("No Client", { blocks: [], entities: [] });
       throw new Error("expected createArticleDraft to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);

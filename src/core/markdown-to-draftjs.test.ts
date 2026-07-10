@@ -21,6 +21,37 @@ describe("markdownToContentState", () => {
     expect(markdownToContentState("some text")).toEqual(markdownToContentState("some text"));
   });
 
+  test("emits the X Articles API content_state schema", () => {
+    const contentState = convert("**Bold** [link](https://example.com) @finch #articles");
+
+    expect(Array.isArray(contentState.entities)).toBe(true);
+    expect(contentState).toEqual({
+      blocks: [
+        {
+          key: "d",
+          text: "Bold link @finch #articles",
+          type: "unstyled",
+          data: {
+            mentions: [{ from_index: 10, to_index: 16, text: "@finch" }],
+            hashtags: [{ from_index: 17, to_index: 26, text: "#articles" }],
+          },
+          entity_ranges: [{ offset: 5, length: 4, key: 0 }],
+          inline_style_ranges: [{ offset: 0, length: 4, style: "bold" }],
+        },
+      ],
+      entities: [
+        {
+          key: "0",
+          value: {
+            type: "link",
+            mutability: "mutable",
+            data: { url: "https://example.com" },
+          },
+        },
+      ],
+    });
+  });
+
   test("converts headings and paragraph blocks", () => {
     expect(convert("# Title\n\n### Section\n\nPlain text.")).toEqual({
       blocks: [
@@ -28,28 +59,28 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "Title",
           type: "header-one",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
         {
           key: "b",
           text: "Section",
           type: "header-three",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
         {
           key: "c",
           text: "Plain text.",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
@@ -60,16 +91,16 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "This is bold, italic, and gone.",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [
-            { offset: 8, length: 4, style: "BOLD" },
-            { offset: 14, length: 6, style: "ITALIC" },
-            { offset: 26, length: 4, style: "STRIKETHROUGH" },
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [
+            { offset: 8, length: 4, style: "bold" },
+            { offset: 14, length: 6, style: "italic" },
+            { offset: 26, length: 4, style: "strikethrough" },
           ],
-          entityRanges: [],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
@@ -80,12 +111,12 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "Check my_variable_name here",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
@@ -96,12 +127,12 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "This is really important",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [{ offset: 8, length: 6, style: "ITALIC" }],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [{ offset: 8, length: 6, style: "italic" }],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
@@ -112,55 +143,55 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "This is bold and italic.",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [
-            { offset: 8, length: 15, style: "BOLD" },
-            { offset: 17, length: 6, style: "ITALIC" },
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [
+            { offset: 8, length: 15, style: "bold" },
+            { offset: 17, length: 6, style: "italic" },
           ],
-          entityRanges: [],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
-  test("converts unordered and ordered lists with nesting depth", () => {
+  test("converts unordered and ordered list items without unsupported depth", () => {
     expect(convert("- top\n  - nested\n1. first\n  2. second")).toEqual({
       blocks: [
         {
           key: "a",
           text: "top",
           type: "unordered-list-item",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
         {
           key: "b",
           text: "nested",
           type: "unordered-list-item",
-          depth: 1,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
         {
           key: "c",
           text: "first",
           type: "ordered-list-item",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
         {
           key: "d",
           text: "second",
           type: "ordered-list-item",
-          depth: 1,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
@@ -171,36 +202,40 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "quoted text",
           type: "blockquote",
-          depth: 0,
-          inlineStyleRanges: [{ offset: 7, length: 4, style: "BOLD" }],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [{ offset: 7, length: 4, style: "bold" }],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 
-  test("converts links mentions and hashtags into consistent entities", () => {
+  test("converts links to entities and mentions and hashtags to block metadata", () => {
     expect(convert("Hi [Finch](https://example.com) from @finch_cli #articles")).toEqual({
       blocks: [
         {
           key: "d",
           text: "Hi Finch from @finch_cli #articles",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [
-            { offset: 3, length: 5, key: "a" },
-            { offset: 14, length: 10, key: "b" },
-            { offset: 25, length: 9, key: "c" },
-          ],
+          data: {
+            mentions: [{ from_index: 14, to_index: 24, text: "@finch_cli" }],
+            hashtags: [{ from_index: 25, to_index: 34, text: "#articles" }],
+          },
+          entity_ranges: [{ offset: 3, length: 5, key: 0 }],
+          inline_style_ranges: [],
         },
       ],
-      entities: {
-        a: { type: "LINK", mutability: "MUTABLE", data: { url: "https://example.com" } },
-        b: { type: "MENTION", mutability: "MUTABLE", data: { username: "finch_cli" } },
-        c: { type: "HASHTAG", mutability: "MUTABLE", data: { hashtag: "articles" } },
-      },
+      entities: [
+        {
+          key: "0",
+          value: {
+            type: "link",
+            mutability: "mutable",
+            data: { url: "https://example.com" },
+          },
+        },
+      ],
     });
   });
 
@@ -211,14 +246,21 @@ describe("markdownToContentState", () => {
           key: "b",
           text: "Read Finch docs.",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [{ offset: 5, length: 5, style: "BOLD" }],
-          entityRanges: [{ offset: 5, length: 10, key: "a" }],
+          data: {},
+          entity_ranges: [{ offset: 5, length: 10, key: 0 }],
+          inline_style_ranges: [{ offset: 5, length: 5, style: "bold" }],
         },
       ],
-      entities: {
-        a: { type: "LINK", mutability: "MUTABLE", data: { url: "https://example.com/docs" } },
-      },
+      entities: [
+        {
+          key: "0",
+          value: {
+            type: "link",
+            mutability: "mutable",
+            data: { url: "https://example.com/docs" },
+          },
+        },
+      ],
     });
   });
 
@@ -229,20 +271,20 @@ describe("markdownToContentState", () => {
           key: "a",
           text: "alt text",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
         {
           key: "b",
           text: "const value = 1;",
           type: "unstyled",
-          depth: 0,
-          inlineStyleRanges: [],
-          entityRanges: [],
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
         },
       ],
-      entities: {},
+      entities: [],
     });
   });
 });

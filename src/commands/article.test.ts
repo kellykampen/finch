@@ -32,20 +32,20 @@ describe("runArticleDraft", () => {
             key: "block_0",
             text: "Hello",
             type: "header-one",
-            depth: 0,
-            inlineStyleRanges: [],
-            entityRanges: [],
+            data: {},
+            entity_ranges: [],
+            inline_style_ranges: [],
           },
           {
             key: "block_1",
             text: "This is a test article.",
             type: "unstyled",
-            depth: 0,
-            inlineStyleRanges: [],
-            entityRanges: [],
+            data: {},
+            entity_ranges: [],
+            inline_style_ranges: [],
           },
         ],
-        entities: {},
+        entities: [],
       });
       expect(createdWith.coverMediaId).toBeUndefined();
     } finally {
