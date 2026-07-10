@@ -1,8 +1,13 @@
 import * as crypto from "node:crypto";
 import { OAuth2, generateCodeChallenge, generateCodeVerifier, type OAuth2Token } from "@xdevplatform/xdk";
 import { createPromptSession } from "../core/prompt";
-import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
-import { createOAuth2Transport, type XTransport } from "../core/transport";
+import {
+  readOAuth2Config,
+  writeOAuth2Config,
+  type FinchOAuth2Config,
+  type OAuth2AuthConfig,
+} from "../core/oauth2-config";
+import { createOAuth2Transport, createRefreshingOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 
 export interface AuthResult {
@@ -242,7 +247,7 @@ export interface AuthStatusResult {
 
 export interface AuthStatusDeps {
   readOAuth2Config?: () => FinchOAuth2Config | null;
-  transportFactory?: (accessToken: string) => XTransport;
+  createRefreshingTransport?: (config: OAuth2AuthConfig) => XTransport;
 }
 
 /**
@@ -253,7 +258,7 @@ export interface AuthStatusDeps {
  */
 export async function runAuthStatus(deps: AuthStatusDeps = {}): Promise<{ data: AuthStatusResult; human: string }> {
   const readConfig = deps.readOAuth2Config ?? readOAuth2Config;
-  const transportFactory = deps.transportFactory ?? createOAuth2Transport;
+  const createRefreshing = deps.createRefreshingTransport ?? createRefreshingOAuth2Transport;
 
   const config = readConfig();
   if (!config) {
@@ -263,7 +268,10 @@ export async function runAuthStatus(deps: AuthStatusDeps = {}): Promise<{ data: 
     };
   }
 
-  const transport = transportFactory(config.auth.accessToken);
+  // Use a refreshing transport so an expired access token is refreshed using the
+  // stored refresh token/client ID before declaring credentials invalid. On
+  // successful refresh the transport persists the new tokens via writeOAuth2Config.
+  const transport = createRefreshing(config.auth);
   try {
     const me = await transport.getMe();
     return {
@@ -274,7 +282,7 @@ export async function runAuthStatus(deps: AuthStatusDeps = {}): Promise<{ data: 
     if (err instanceof FinchError && err.code === "AUTH_ERROR") {
       return {
         data: { configured: true, valid: false, username: null },
-        human: "Configured, but X rejected the credentials.",
+        human: "Configured, but credentials are expired or invalid.",
       };
     }
     throw err;

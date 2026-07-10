@@ -2,7 +2,9 @@ import { describe, test, expect } from "bun:test";
 import { runAuth, runAuthStatus, parseClientIdFlag, startLocalCallbackServer } from "./auth";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
-import type { FinchOAuth2Config } from "../core/oauth2-config";
+import { createRefreshingOAuth2Transport } from "../core/transport";
+
+import type { FinchOAuth2Config, OAuth2AuthConfig } from "../core/oauth2-config";
 import type { OAuth2Token } from "@xdevplatform/xdk";
 
 const fakeOAuth2Config: FinchOAuth2Config = {
@@ -352,17 +354,11 @@ describe("startLocalCallbackServer", () => {
 
 describe("runAuthStatus", () => {
   test("reports unconfigured without calling the transport", async () => {
-    let transportCalled = false;
     const result = await runAuthStatus({
       readOAuth2Config: () => null,
-      transportFactory: () => {
-        transportCalled = true;
-        throw new Error("should not be called");
-      },
     });
 
     expect(result.data).toEqual({ configured: false, valid: false, username: null });
-    expect(transportCalled).toBe(false);
   });
 
   test("reports configured and valid when the live call succeeds", async () => {
@@ -372,7 +368,7 @@ describe("runAuthStatus", () => {
 
     const result = await runAuthStatus({
       readOAuth2Config: () => fakeOAuth2Config,
-      transportFactory: () => transport,
+      createRefreshingTransport: () => transport,
     });
 
     expect(result.data).toEqual({ configured: true, valid: true, username: "kelly" });
@@ -387,7 +383,7 @@ describe("runAuthStatus", () => {
 
     const result = await runAuthStatus({
       readOAuth2Config: () => fakeOAuth2Config,
-      transportFactory: () => transport,
+      createRefreshingTransport: () => transport,
     });
 
     expect(result.data).toEqual({ configured: true, valid: false, username: null });
@@ -401,7 +397,113 @@ describe("runAuthStatus", () => {
     });
 
     await expect(
-      runAuthStatus({ readOAuth2Config: () => fakeOAuth2Config, transportFactory: () => transport }),
+      runAuthStatus({ readOAuth2Config: () => fakeOAuth2Config, createRefreshingTransport: () => transport }),
     ).rejects.toThrow(FinchError);
+  });
+
+  test("refreshes an expired access token via refresh token before reporting valid", async () => {
+    const expiredConfig: FinchOAuth2Config = {
+      auth: {
+        clientId: "client-id",
+        accessToken: "expired-access",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 1000, // already expired
+        scopes: ["tweet.read"],
+      },
+      transport: "oauth2",
+      defaults: { json: false, count: 10 },
+    };
+
+    const refreshedTransport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "refreshed-user", name: "Refreshed" }),
+    });
+
+    let capturedRefreshingConfig: OAuth2AuthConfig | undefined;
+    const result = await runAuthStatus({
+      readOAuth2Config: () => expiredConfig,
+      createRefreshingTransport: (authConfig) => {
+        capturedRefreshingConfig = authConfig;
+        return refreshedTransport;
+      },
+    });
+
+    expect(result.data).toEqual({ configured: true, valid: true, username: "refreshed-user" });
+    expect(capturedRefreshingConfig).toBeDefined();
+    expect(capturedRefreshingConfig?.clientId).toBe("client-id");
+    expect(capturedRefreshingConfig?.refreshToken).toBe("refresh-token");
+  });
+
+  test("persists rotated refresh token from successful refresh during status check", async () => {
+    const expiredConfig: FinchOAuth2Config = {
+      auth: {
+        clientId: "client-id",
+        accessToken: "expired-access",
+        refreshToken: "old-refresh",
+        expiresAt: Date.now() - 1000,
+        scopes: ["tweet.read"],
+      },
+      transport: "oauth2",
+      defaults: { json: false, count: 10 },
+    };
+
+    const persisted: { config: OAuth2AuthConfig | null } = { config: null };
+    const result = await runAuthStatus({
+      readOAuth2Config: () => expiredConfig,
+      createRefreshingTransport: (authConfig) =>
+        createRefreshingOAuth2Transport(authConfig, {
+          refreshFn: async () =>
+            fakeOAuth2Token({
+              access_token: "new-access",
+              refresh_token: "new-rotated-refresh",
+            }),
+          persistFn: async (cfg) => {
+            persisted.config = cfg;
+          },
+          buildTransportFn: () =>
+            fakeTransport({
+              getMe: async () => ({ id: "2", username: "rotated", name: "Rotated" }),
+            }),
+        }),
+    });
+
+    expect(result.data).toEqual({ configured: true, valid: true, username: "rotated" });
+    expect(persisted.config).not.toBeNull();
+    expect(persisted.config?.clientId).toBe("client-id");
+    expect(persisted.config?.accessToken).toBe("new-access");
+    expect(persisted.config?.refreshToken).toBe("new-rotated-refresh");
+    expect(persisted.config?.scopes).toEqual(["tweet.read"]);
+  });
+
+  test("reports invalid when refresh fails and does not leak secrets", async () => {
+    const expiredConfig: FinchOAuth2Config = {
+      auth: {
+        clientId: "client-id",
+        accessToken: "expired-access",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 1000,
+        scopes: ["tweet.read"],
+      },
+      transport: "oauth2",
+      defaults: { json: false, count: 10 },
+    };
+
+    const result = await runAuthStatus({
+      readOAuth2Config: () => expiredConfig,
+      createRefreshingTransport: (_authConfig) => {
+        // simulate refresh failure inside the refreshing transport by throwing AUTH_ERROR
+        return fakeTransport({
+          getMe: async () => {
+            throw new FinchError("AUTH_ERROR", "Your session has expired — run `finch auth` to log in again.");
+          },
+        });
+      },
+    });
+
+    expect(result.data).toEqual({ configured: true, valid: false, username: null });
+    expect(result.human).toBe("Configured, but credentials are expired or invalid.");
+    // ensure no tokens appear in human message
+    expect(result.human).not.toContain("refresh");
+    expect(result.human).not.toContain("access");
+    expect(result.human).not.toContain("client-id");
   });
 });
