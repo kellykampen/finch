@@ -19,6 +19,7 @@ const OAUTH2_SCOPES = [
   "follows.write",
   "bookmark.read",
   "bookmark.write",
+  "media.write",
   "offline.access",
 ] as const;
 

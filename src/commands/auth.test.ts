@@ -23,7 +23,8 @@ function fakeOAuth2Token(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
     token_type: "Bearer",
     expires_in: 7200,
     refresh_token: "refresh-token",
-    scope: "tweet.read tweet.write users.read like.write follows.write bookmark.read bookmark.write offline.access",
+    scope:
+      "tweet.read tweet.write users.read like.write follows.write bookmark.read bookmark.write media.write offline.access",
     ...overrides,
   };
 }
@@ -57,7 +58,11 @@ function fakeCallbackServer(code: string, state: string) {
 function oauth2AuthDeps(
   overrides: {
     readEnv?: (key: string) => string | undefined;
-    createOAuth2Client?: () => ReturnType<typeof fakeOAuth2Client>;
+    createOAuth2Client?: (config: {
+      clientId: string;
+      redirectUri: string;
+      scope: string[];
+    }) => ReturnType<typeof fakeOAuth2Client>;
     startCallbackServer?: (
       redirectUri: string,
       expectedState: string,
@@ -110,12 +115,33 @@ describe("runAuth", () => {
           "follows.write",
           "bookmark.read",
           "bookmark.write",
+          "media.write",
           "offline.access",
         ],
       },
       transport: "oauth2",
       defaults: { json: false, count: 10 },
     });
+  });
+
+  test("requests the media.write scope required by X media upload endpoints", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    let requestedScopes: string[] = [];
+
+    await runAuth({
+      clientId: "client-id",
+      deps: oauth2AuthDeps({
+        createOAuth2Client: (config) => {
+          requestedScopes = config.scope;
+          return fakeOAuth2Client();
+        },
+        createTransport: () => transport,
+      }),
+    });
+
+    expect(requestedScopes).toContain("media.write");
   });
 
   test("generates PKCE parameters, sets them before building the authorization URL, and passes the verifier on exchange", async () => {

@@ -94,8 +94,8 @@ The Client ID is resolved in this order:
 3. An interactive `Client ID:` prompt (masked, no echo)
 
 The flow requests the full scope superset Finch needs: `tweet.read`, `tweet.write`,
-`users.read`, `like.write`, `follows.write`, `bookmark.read`, `bookmark.write`, and
-`offline.access`.
+`users.read`, `like.write`, `follows.write`, `bookmark.read`, `bookmark.write`,
+`media.write`, and `offline.access`.
 
 Before anything is saved, Finch makes **one live validation call** to X. Only if that
 succeeds does it write `~/.finch/config` at `0600`. A denied or misconfigured Client
@@ -156,6 +156,10 @@ finch post "reaction" --media ./lol.gif
 - `--alt <text>` is repeatable and lines up with each image in order (ignored for
   GIF/video).
 - Media paths may also be comma-separated in a single `--media` value.
+- Image, GIF, video, and alt-text endpoints all require the `media.write` OAuth2
+  scope. If you authenticated with Finch before media support included that scope,
+  run `finch auth` again to grant it; refreshing an older token cannot add scopes.
+  GIF/video use the same scope as images and do not require a different auth mode.
 
 **Thread:**
 

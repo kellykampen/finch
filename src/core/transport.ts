@@ -219,6 +219,11 @@ const USER_FIELDS = ["description", "public_metrics"];
 const VIDEO_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
 const VIDEO_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_STATUS_CHECK_AFTER_SECS = 5;
+const MEDIA_WRITE_SCOPE = "media.write";
+const MEDIA_WRITE_AUTH_ERROR =
+  "Media upload requires the media.write OAuth2 scope. Run `finch auth` to re-authorize, then retry.";
+const MEDIA_UPLOAD_FORBIDDEN_ERROR =
+  "X denied media upload. The v2 media endpoints require OAuth2 user context with media.write. Run `finch auth` to re-authorize; if `finch config get auth.scopes` already includes media.write, verify your X app has v2 media endpoint access.";
 
 function shapeTweet(t: TweetLike): FinchTweet {
   return {
@@ -903,6 +908,9 @@ function mapSdkError(err: unknown, operation?: string): FinchError {
           err.data ?? null,
         );
       }
+      if (operation === "uploadImage" || operation === "uploadVideo" || operation === "setMediaAltText") {
+        return new FinchError("AUTH_ERROR", MEDIA_UPLOAD_FORBIDDEN_ERROR, err.data ?? null);
+      }
       return new FinchError("AUTH_ERROR", "X rejected the provided credentials", err.data ?? null);
     }
     if (err.status === 429) {
@@ -1117,18 +1125,27 @@ class RefreshingOAuth2Transport implements XTransport {
   }
 
   async uploadImage(path: string): Promise<{ media_id: string }> {
+    this.requireMediaWriteScope();
     const t = await this.ensureFreshToken();
     return t.uploadImage(path);
   }
 
   async uploadVideo(path: string, onStatus?: (message: string) => void): Promise<{ media_id: string }> {
+    this.requireMediaWriteScope();
     const t = await this.ensureFreshToken();
     return t.uploadVideo(path, onStatus);
   }
 
   async setMediaAltText(mediaId: string, altText: string): Promise<void> {
+    this.requireMediaWriteScope();
     const t = await this.ensureFreshToken();
     return t.setMediaAltText(mediaId, altText);
+  }
+
+  private requireMediaWriteScope(): void {
+    if (!this.config.scopes.includes(MEDIA_WRITE_SCOPE)) {
+      throw new FinchError("AUTH_ERROR", MEDIA_WRITE_AUTH_ERROR);
+    }
   }
 
   async createArticleDraft(title: string, contentState: object, coverMediaId?: string): Promise<{ id: string }> {
