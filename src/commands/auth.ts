@@ -19,6 +19,7 @@ const OAUTH2_SCOPES = [
   "follows.write",
   "bookmark.read",
   "bookmark.write",
+  "media.write",
   "offline.access",
 ] as const;
 
@@ -221,7 +222,7 @@ export async function runAuth(options: RunAuthOptions = {}): Promise<{ data: Aut
       accessToken: token.access_token,
       refreshToken: token.refresh_token ?? "",
       expiresAt: Date.now() + token.expires_in * 1000,
-      scopes: (token.scope ?? "").split(" ").filter(Boolean),
+      scopes: (token.scope ?? OAUTH2_SCOPES.join(" ")).split(" ").filter(Boolean),
     },
     transport: "oauth2",
     defaults: { json: false, count: 10 },

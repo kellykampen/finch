@@ -436,6 +436,9 @@ describe("ByokTransport.uploadImage", () => {
       } catch (err) {
         expect(err).toBeInstanceOf(FinchError);
         expect((err as FinchError).code).toBe("AUTH_ERROR");
+        expect((err as FinchError).message).toBe(
+          "X denied media upload. The v2 media endpoints require OAuth2 user context with media.write. Run `finch auth` to re-authorize; if `finch config get auth.scopes` already includes media.write, verify your X app has v2 media endpoint access.",
+        );
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -526,6 +529,33 @@ describe("ByokTransport.uploadVideo", () => {
         ["finalize", "media-123"],
         ["status", "media-123", { command: "STATUS" }],
       ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("maps an initialize-upload 403 to an actionable media.write error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-video-upload-test-"));
+    try {
+      const path = join(dir, "clip.gif");
+      writeFileSync(path, Buffer.from("fake-gif-bytes"));
+      const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+        ...unusedMediaClient,
+        initializeUpload: async () => {
+          throw new ApiError("Forbidden", 403, "Forbidden", new Headers(), null);
+        },
+      });
+
+      try {
+        await transport.uploadVideo(path);
+        throw new Error("expected uploadVideo to throw");
+      } catch (err) {
+        expect(err).toBeInstanceOf(FinchError);
+        expect((err as FinchError).code).toBe("AUTH_ERROR");
+        expect((err as FinchError).message).toBe(
+          "X denied media upload. The v2 media endpoints require OAuth2 user context with media.write. Run `finch auth` to re-authorize; if `finch config get auth.scopes` already includes media.write, verify your X app has v2 media endpoint access.",
+        );
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -646,6 +676,9 @@ describe("ByokTransport.setMediaAltText", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe(
+        "X denied media upload. The v2 media endpoints require OAuth2 user context with media.write. Run `finch auth` to re-authorize; if `finch config get auth.scopes` already includes media.write, verify your X app has v2 media endpoint access.",
+      );
     }
   });
 });
@@ -1809,6 +1842,33 @@ function createRefreshToken(overrides: Partial<OAuth2Token> = {}): OAuth2Token {
 }
 
 describe("createRefreshingOAuth2Transport", () => {
+  test("rejects media upload before an API call when the stored token lacks media.write", async () => {
+    const config = createOAuth2AuthConfig({ scopes: ["tweet.read", "tweet.write"] });
+    let uploadCalled = false;
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => 1_000,
+      buildTransportFn: () =>
+        fakeTransport({
+          uploadImage: async () => {
+            uploadCalled = true;
+            return { media_id: "unexpected" };
+          },
+        }),
+    });
+
+    try {
+      await transport.uploadImage("image.png");
+      throw new Error("expected uploadImage to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe(
+        "Media upload requires the media.write OAuth2 scope. Run `finch auth` to re-authorize, then retry.",
+      );
+    }
+    expect(uploadCalled).toBe(false);
+  });
+
   test("does not refresh when the token is far from expiry", async () => {
     const config = createOAuth2AuthConfig();
     const calls = {
