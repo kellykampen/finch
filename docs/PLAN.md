@@ -271,6 +271,7 @@ DMs are explicitly out of v1 per the brief.
 | Command | Behavior | X API v2 call | JSON `data` shape | Notes |
 |---|---|---|---|---|
 | `finch schema` | Describe every command's name, flags, endpoint, and JSON data shape as a single machine-readable document | — | `{commands: CommandSchemaEntry[]}` | Also available as the global `--describe` flag |
+| `finch version` | Report the semver baked into this exact binary at build time | — | `{version: string}` | Also available as the global `--version` flag. Added by FIN-59 so a "command not recognized" report can be triaged as a stale local build/Homebrew install before assuming a source regression — check this alongside `finch schema` (which reflects exactly what this binary's own compiled code supports, regardless of what's documented here) |
 
 ## MCP server surface
 
@@ -316,6 +317,10 @@ injection over a browser-redirect OAuth flow; a bundled MCP surface alongside th
   name, flags, X API endpoint, and JSON output shape as a single JSON document (effectively
   this plan's command-spec table, machine-readable). Lets an agent harness discover Finch's
   full surface without parsing `--help` text or hardcoding it.
+- **`finch version` / `--version`** — reports the semver of the exact binary being run (FIN-59).
+  Pairs with `finch schema`: if a command an agent/human expects isn't listed there, checking
+  the version first separates "this binary is stale, rebuild/upgrade it" from "this is a real
+  regression," rather than guessing.
 - **Input validation on every id/URL/text argument** — reject control characters (below ASCII
   0x20) in post text and reject a tweet-id argument that's actually a URL with unexpected query
   params, before it reaches the API. Applies the article's "assume inputs can be adversarial

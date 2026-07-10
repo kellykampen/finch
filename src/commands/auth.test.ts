@@ -60,6 +60,7 @@ function fakeCallbackServer(code: string, state: string) {
 function oauth2AuthDeps(
   overrides: {
     readEnv?: (key: string) => string | undefined;
+    promptClientId?: () => Promise<string>;
     createOAuth2Client?: (config: {
       clientId: string;
       redirectUri: string;
@@ -75,6 +76,7 @@ function oauth2AuthDeps(
 ) {
   return {
     readEnv: overrides.readEnv,
+    promptClientId: overrides.promptClientId,
     createOAuth2Client: overrides.createOAuth2Client ?? (() => fakeOAuth2Client()),
     startCallbackServer:
       overrides.startCallbackServer ??
@@ -83,6 +85,13 @@ function oauth2AuthDeps(
     createTransport: overrides.createTransport,
     writeOAuth2Config: overrides.writeOAuth2Config,
   };
+}
+
+function rejectingPromptClientId(): () => Promise<string> {
+  return () =>
+    Promise.reject(
+      new Error("promptClientId should not be invoked when a --client-id flag or env var was already resolved"),
+    );
 }
 
 describe("runAuth", () => {
@@ -230,6 +239,61 @@ describe("runAuth", () => {
     });
 
     expect(written.clientId).toBe("env-client-id");
+  });
+
+  // FIN-59: an operator reported `finch auth --client-id ...` still prompting
+  // for a Client ID even though the flag was passed. Source-level tracing
+  // shows resolveClientId() only ever calls promptClientId as its last
+  // resort — but that guarantee is only as good as this test staying green,
+  // so assert the prompt is never reached whenever a clientId is already
+  // resolvable via the flag or the env var.
+  test("never invokes the interactive prompt when --client-id is provided", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+
+    const result = await runAuth({
+      clientId: parseClientIdFlag(["--client-id", "abc123"]),
+      deps: oauth2AuthDeps({
+        promptClientId: rejectingPromptClientId(),
+        createTransport: () => transport,
+      }),
+    });
+
+    expect(result.data).toEqual({ configured: true, username: "kelly" });
+  });
+
+  test("never invokes the interactive prompt when --client-id=<id> is provided", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+
+    const result = await runAuth({
+      clientId: parseClientIdFlag(["--client-id=abc123"]),
+      deps: oauth2AuthDeps({
+        promptClientId: rejectingPromptClientId(),
+        createTransport: () => transport,
+      }),
+    });
+
+    expect(result.data).toEqual({ configured: true, username: "kelly" });
+  });
+
+  test("never invokes the interactive prompt when FINCH_OAUTH2_CLIENT_ID is set and no flag is passed", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+
+    const result = await runAuth({
+      clientId: parseClientIdFlag(["--other", "value"]),
+      deps: oauth2AuthDeps({
+        readEnv: (key) => (key === "FINCH_OAUTH2_CLIENT_ID" ? "env-client-id" : undefined),
+        promptClientId: rejectingPromptClientId(),
+        createTransport: () => transport,
+      }),
+    });
+
+    expect(result.data).toEqual({ configured: true, username: "kelly" });
   });
 
   test("throws and does not write the config on CSRF state mismatch", async () => {
