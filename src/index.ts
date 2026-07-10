@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { FinchError, exitCodeForError } from "./core/errors";
 import { runAuth, runAuthStatus, parseClientIdFlag } from "./commands/auth";
+import { runVersion } from "./commands/version";
 import { runWhoami } from "./commands/whoami";
 import { runPost } from "./commands/post";
 import { runReply } from "./commands/reply";
@@ -122,6 +123,9 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   }
   if (cmd === "schema") {
     return runSchema();
+  }
+  if (cmd === "version") {
+    return runVersion();
   }
 
   throw new FinchError("USAGE_ERROR", `Unknown command: ${args.join(" ") || "(none)"}`);

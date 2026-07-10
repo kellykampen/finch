@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import pkg from "../package.json" with { type: "json" };
 
 const CLI_ENTRY = join(import.meta.dir, "index.ts");
 
@@ -128,6 +129,31 @@ describe("finch CLI arg parsing / exit codes", () => {
     const envelope = JSON.parse(stdout);
     expect(envelope.ok).toBe(true);
     expect(Array.isArray(envelope.data.commands)).toBe(true);
+  });
+
+  test("version reports this binary's semver", () => {
+    const { exitCode, stdout } = runCli(["version", "--json"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope).toEqual({ ok: true, data: { version: pkg.version } });
+  });
+
+  test("--version works as a global-flag alias for `finch version`", () => {
+    const { exitCode, stdout } = runCli(["--version"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope).toEqual({ ok: true, data: { version: pkg.version } });
+  });
+
+  test("a literal '--version' positional after the `--` terminator is NOT hijacked into version output", () => {
+    const { exitCode, stdout } = runCli(["like", "--", "--version"]);
+
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(exitCode).toBe(2);
   });
 
   test("a literal '--describe' positional after the `--` terminator is NOT hijacked into schema output", () => {
