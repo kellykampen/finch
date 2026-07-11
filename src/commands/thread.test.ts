@@ -482,4 +482,129 @@ describe("runThread", () => {
       expect(finchErr.message).toContain("Cannot mix images with GIF/video media");
     }
   });
+
+  test("--help prints usage and does not call the transport", async () => {
+    let called = false;
+    let getTransportCalled = false;
+    const transport = fakeTransport({
+      createTweet: async () => {
+        called = true;
+        throw new Error("should not be called");
+      },
+    });
+
+    const result = await runThread(["--help"], {
+      getTransport: () => {
+        getTransportCalled = true;
+        return transport;
+      },
+    });
+
+    expect(result.data).toEqual({ help: true, text: expect.stringContaining("Usage: finch thread") });
+    expect(result.human).toContain("Usage: finch thread");
+    expect(called).toBe(false);
+    expect(getTransportCalled).toBe(false);
+  });
+
+  test("-h prints usage and does not call the transport", async () => {
+    let getTransportCalled = false;
+
+    const result = await runThread(["-h"], {
+      getTransport: () => {
+        getTransportCalled = true;
+        return fakeTransport({});
+      },
+    });
+
+    expect(result.data).toEqual({ help: true, text: expect.stringContaining("Usage: finch thread") });
+    expect(getTransportCalled).toBe(false);
+  });
+
+  test("unknown flag before the -- terminator is rejected instead of being posted as thread text", async () => {
+    let called = false;
+    const transport = fakeTransport({
+      createTweet: async () => {
+        called = true;
+        throw new Error("should not be called");
+      },
+    });
+
+    await expect(runThread(["first", "--not-a-flag", "second"], { getTransport: () => transport })).rejects.toThrow(
+      FinchError,
+    );
+    expect(called).toBe(false);
+  });
+
+  test("a bare positional starting with - is rejected as an unknown flag, not posted as text", async () => {
+    let called = false;
+    const transport = fakeTransport({
+      createTweet: async () => {
+        called = true;
+        throw new Error("should not be called");
+      },
+    });
+
+    try {
+      await runThread(["-1 isn't a bad take"], { getTransport: () => transport });
+      throw new Error("expected runThread to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("USAGE_ERROR");
+    }
+    expect(called).toBe(false);
+  });
+
+  test("--flag-shaped text is literal content when placed after the -- terminator", async () => {
+    const texts: string[] = [];
+    let counter = 0;
+    const transport = fakeTransport({
+      createTweet: async (text) => {
+        counter += 1;
+        texts.push(text);
+        return { id: String(counter), text };
+      },
+    });
+
+    const result = await runThread(["--", "-1 isn't a bad take", "--also literal"], {
+      getTransport: () => transport,
+    });
+
+    expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+    expect(texts).toEqual(["-1 isn't a bad take", "--also literal"]);
+  });
+
+  test("--help after the -- terminator is treated as literal thread content, not the help flag", async () => {
+    const transport = fakeTransport({
+      createTweet: async (text) => ({ id: "1", text }),
+    });
+
+    const result = await runThread(["--", "--help"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ ids: ["1"], count: 1 });
+  });
+
+  test("literal content beginning with - is preserved when read from --file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "finch-thread-test-"));
+    try {
+      const path = join(dir, "thread.txt");
+      writeFileSync(path, "-1 isn't a bad take\n\n--also literal\n");
+      const texts: string[] = [];
+      let counter = 0;
+      const transport = fakeTransport({
+        createTweet: async (text) => {
+          counter += 1;
+          texts.push(text);
+          return { id: String(counter), text };
+        },
+      });
+
+      const result = await runThread(["--file", path], { getTransport: () => transport });
+
+      expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+      expect(texts).toEqual(["-1 isn't a bad take", "--also literal"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
