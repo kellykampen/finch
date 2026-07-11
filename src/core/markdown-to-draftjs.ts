@@ -226,7 +226,7 @@ function parseInline(
       const url = capture(linkMatch, 2);
       const entityKey = getKey();
       entities[entityKey] = { type: "LINK", mutability: "MUTABLE", data: { url } };
-      const nested = parseInline(linkText, getKey, new Set(activeStyles), entityKey, autolinkBareUrls);
+      const nested = parseInline(linkText, getKey, new Set(activeStyles), entityKey, false);
       chars.push(...nested.chars);
       Object.assign(entities, nested.entities);
       i += linkMatch[0].length;

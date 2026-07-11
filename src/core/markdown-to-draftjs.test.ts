@@ -396,6 +396,22 @@ describe("markdownToContentState", () => {
     });
   });
 
+  test("does not autolink a bare URL used as a markdown link's display text", () => {
+    expect(convert("[https://a.com](https://b.com)")).toEqual({
+      blocks: [
+        {
+          key: "b",
+          text: "https://a.com",
+          type: "unstyled",
+          data: {},
+          entity_ranges: [{ offset: 0, length: 13, key: "0" }],
+          inline_style_ranges: [],
+        },
+      ],
+      entities: [{ key: "0", value: { type: "link", mutability: "mutable", data: { url: "https://b.com" } } }],
+    });
+  });
+
   test("preserves bare URLs as plain text inside inline code", () => {
     expect(convert("Use `https://example.com` in code.")).toEqual({
       blocks: [
