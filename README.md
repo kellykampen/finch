@@ -128,8 +128,14 @@ prompt every couple of hours. If a refresh token actually expires or is revoked,
 Finch reports an auth error telling you to re-run `finch auth`.
 
 **Hard cutover:** if you have an old (pre-OAuth 2.0) `~/.finch/config` from before
-this migration, Finch will refuse to read it and report a clear error telling you to
-run `finch auth` again. There is no automatic migration — you must re-authenticate.
+this migration, Finch refuses to read it and reports a clear, actionable error — it
+names the offending file path, states that it detected a **legacy OAuth 1.0a config**,
+and explains that there is **no automatic migration**. Run `finch auth` again to
+re-authenticate; that overwrites the stale file, and none of the old credentials are
+carried over. In `--json` mode the same error carries a machine-readable
+`detail: { reason: "legacy_oauth1_config", migration: "manual", remediation: "run \`finch auth\`", legacyConfigPath }`.
+The message and detail reference only the config path and recovery command — never any
+credential value.
 
 ## Usage
 

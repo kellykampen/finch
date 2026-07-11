@@ -72,21 +72,77 @@ describe("readOAuth2Config", () => {
     }
   });
 
-  test("throws AUTH_ERROR with a clear message when the config is a legacy OAuth 1.0a shape", () => {
+  // Fields deliberately assembled via concatenation so no literal secret-looking
+  // token string appears in this source file, and so we can assert none of these
+  // VALUES ever leak into the remediation error (FIN-73 AC: messages never
+  // include secret values).
+  const LEGACY_SECRET_VALUES = ["key123", "key-secret-123", "token123", "token-secret-123"];
+  function writeLegacyConfig(overrides: Record<string, unknown> = {}): void {
     const legacyConfig = {
       auth: {
-        apiKey: "key123",
-        ["apiKey" + "Secret"]: "key-secret-123",
-        accessToken: "token123",
-        ["accessToken" + "Secret"]: "token-secret-123",
+        apiKey: LEGACY_SECRET_VALUES[0],
+        ["apiKey" + "Secret"]: LEGACY_SECRET_VALUES[1],
+        accessToken: LEGACY_SECRET_VALUES[2],
+        ["accessToken" + "Secret"]: LEGACY_SECRET_VALUES[3],
       },
       transport: "byok",
       defaults: { json: false, count: 10 },
+      ...overrides,
     };
     mkdirSync(dirname(configPath()), { recursive: true });
     writeFileSync(configPath(), JSON.stringify(legacyConfig, null, 2), {
       mode: 0o600,
     });
+  }
+
+  test("throws AUTH_ERROR with actionable remediation guidance for a legacy OAuth 1.0a shape", () => {
+    writeLegacyConfig();
+
+    try {
+      readOAuth2Config();
+      throw new Error("expected readOAuth2Config to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      const finchErr = err as FinchError;
+      expect(finchErr.code).toBe("AUTH_ERROR");
+      // The message names what was detected, that migration is manual, and the
+      // exact recovery command.
+      expect(finchErr.message).toContain("legacy OAuth 1.0a config");
+      expect(finchErr.message).toContain("finch auth");
+      expect(finchErr.message).toContain("cannot migrate it automatically");
+      expect(finchErr.message).toContain(configPath());
+      // Machine-readable remediation hint for --json / MCP consumers.
+      expect(finchErr.detail).toMatchObject({
+        reason: "legacy_oauth1_config",
+        migration: "manual",
+        remediation: "run `finch auth`",
+        legacyConfigPath: configPath(),
+      });
+    }
+  });
+
+  test("legacy-config remediation error never leaks any credential value", () => {
+    writeLegacyConfig();
+
+    try {
+      readOAuth2Config();
+      throw new Error("expected readOAuth2Config to throw");
+    } catch (err) {
+      const serialized = JSON.stringify({
+        message: (err as FinchError).message,
+        detail: (err as FinchError).detail,
+      });
+      for (const secret of LEGACY_SECRET_VALUES) {
+        expect(serialized).not.toContain(secret);
+      }
+    }
+  });
+
+  test("detects a legacy config by its `byok` transport even when auth.apiKey is missing", () => {
+    // A truncated/mangled legacy file that lost its apiKey field must still be
+    // recognized as legacy (and get the remediation message) rather than being
+    // returned as a broken OAuth2 config that fails confusingly downstream.
+    writeLegacyConfig({ auth: { accessToken: "token123" } });
 
     try {
       readOAuth2Config();
@@ -94,7 +150,7 @@ describe("readOAuth2Config", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(FinchError);
       expect((err as FinchError).code).toBe("AUTH_ERROR");
-      expect((err as FinchError).message).toBe("Finch now uses OAuth 2.0 — run `finch auth`");
+      expect((err as FinchError).message).toContain("legacy OAuth 1.0a config");
     }
   });
 });
