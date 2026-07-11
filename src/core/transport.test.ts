@@ -1978,6 +1978,9 @@ describe("createRefreshingOAuth2Transport", () => {
       refreshFn: async () => {
         throw new ApiError("Unauthorized", 401, "Unauthorized", new Headers(), null);
       },
+      // Custom (in-memory) store so this failure-path test never touches the
+      // real ~/.finch/config via the default file-backed readback/lock.
+      persistFn: () => {},
       buildTransportFn: () =>
         fakeTransport({
           getMe: async () => {
@@ -2044,6 +2047,54 @@ describe("createRefreshingOAuth2Transport", () => {
         scopes: ["tweet.read"],
       });
     });
+
+    test("concurrent refreshes consume the single-use refresh token once; losers reuse the rotated credential", async () => {
+      const now = 2_000_000;
+      const authConfig = createOAuth2AuthConfig({ expiresAt: now });
+      writeOAuth2Config({
+        auth: authConfig,
+        transport: "oauth2",
+        defaults: { json: false, count: 10 },
+      });
+
+      const refreshTokensSeen: string[] = [];
+      const refreshFn = async (_clientId: string, refreshToken: string): Promise<OAuth2Token> => {
+        refreshTokensSeen.push(refreshToken);
+        // X invalidates a rotating refresh token after its first use.
+        if (refreshToken !== "refresh-old") {
+          throw new ApiError("Unauthorized", 401, "invalid_grant", new Headers(), null);
+        }
+        return createRefreshToken({ access_token: "access-rotated", refresh_token: "refresh-rotated" });
+      };
+
+      // Two independent transport instances share the same on-disk store, as
+      // two concurrent commands / MCP tool calls would.
+      const makeTransport = () =>
+        createRefreshingOAuth2Transport(
+          { ...authConfig },
+          {
+            nowFn: () => now,
+            refreshFn,
+            buildTransportFn: (accessToken) =>
+              fakeTransport({
+                getMe: async () => ({ id: "1", username: accessToken, name: "Concurrent" }),
+              }),
+          },
+        );
+
+      const [a, b] = await Promise.all([makeTransport().getMe(), makeTransport().getMe()]);
+
+      // The old, single-use refresh token was presented to X exactly once.
+      expect(refreshTokensSeen.filter((t) => t === "refresh-old")).toHaveLength(1);
+      expect(refreshTokensSeen).not.toContain("refresh-rotated");
+      // Both callers end up authenticated with the rotated access token.
+      expect(a.username).toBe("access-rotated");
+      expect(b.username).toBe("access-rotated");
+
+      const persisted = readOAuth2Config();
+      expect(persisted?.auth.accessToken).toBe("access-rotated");
+      expect(persisted?.auth.refreshToken).toBe("refresh-rotated");
+    });
   });
 
   test("reuses the cached transport on subsequent calls", async () => {
@@ -2064,6 +2115,92 @@ describe("createRefreshingOAuth2Transport", () => {
     await transport.getMe();
 
     expect(buildCount).toBe(1);
+  });
+
+  test("reactively refreshes and retries once when a live call is rejected as unauthorized", async () => {
+    // Access token still looks fresh locally, but X has invalidated it early
+    // (e.g. server-side revocation). The proactive clock check won't fire, so
+    // the transport must react to the credential-rejection and refresh once.
+    const config = createOAuth2AuthConfig({ expiresAt: 10_000_000 });
+    let refreshCalls = 0;
+    let getMeAttempts = 0;
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => 1_000,
+      refreshFn: async (_clientId, refreshToken) => {
+        refreshCalls++;
+        expect(refreshToken).toBe("refresh-old");
+        return createRefreshToken({ access_token: "access-reactive", refresh_token: "refresh-reactive" });
+      },
+      persistFn: () => {},
+      buildTransportFn: (accessToken) =>
+        fakeTransport({
+          getMe: async () => {
+            getMeAttempts++;
+            if (accessToken !== "access-reactive") {
+              throw new FinchError("AUTH_ERROR", "X rejected the provided credentials");
+            }
+            return { id: "9", username: "reactive", name: "Reactive" };
+          },
+        }),
+    });
+
+    const me = await transport.getMe();
+
+    expect(me).toEqual({ id: "9", username: "reactive", name: "Reactive" });
+    expect(refreshCalls).toBe(1);
+    expect(getMeAttempts).toBe(2);
+  });
+
+  test("does not reactively refresh on a non-credential AUTH_ERROR (e.g. missing scope)", async () => {
+    const config = createOAuth2AuthConfig({ expiresAt: 10_000_000 });
+    let refreshCalls = 0;
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => 1_000,
+      refreshFn: async () => {
+        refreshCalls++;
+        return createRefreshToken();
+      },
+      persistFn: () => {},
+      buildTransportFn: () =>
+        fakeTransport({
+          addBookmark: async () => {
+            throw new FinchError(
+              "AUTH_ERROR",
+              "Your X API token is missing the bookmark.write scope. Run `finch auth` to re-authorize with bookmarks access.",
+            );
+          },
+        }),
+    });
+
+    await expect(transport.addBookmark("u1", "t1")).rejects.toThrow("missing the bookmark.write scope");
+    expect(refreshCalls).toBe(0);
+  });
+
+  test("throws session-expired without a network call when no refresh token is stored", async () => {
+    const config = createOAuth2AuthConfig({ refreshToken: "", expiresAt: 2_000_000 });
+    let refreshCalls = 0;
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => 2_000_000,
+      refreshFn: async () => {
+        refreshCalls++;
+        return createRefreshToken();
+      },
+      persistFn: () => {},
+      buildTransportFn: () => fakeTransport({}),
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe("Your session has expired — run `finch auth` to log in again.");
+    }
+    expect(refreshCalls).toBe(0);
   });
 });
 
