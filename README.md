@@ -137,6 +137,10 @@ carried over. In `--json` mode the same error carries a machine-readable
 The message and detail reference only the config path and recovery command — never any
 credential value.
 
+**Suspect a credential is compromised?** See `docs/runbooks/credential-rotation.md` for
+the no-secret rotation/revocation runbook — revoke at the X Developer Portal, re-auth via
+`finch auth`, verify with the safe commands below.
+
 ## Usage
 
 Every command below works as-is; add `--json` to any of them for machine output.
@@ -427,3 +431,6 @@ revealing a credential.
 
 If someone asks you for any of the above to "debug" your account, treat it as a
 credential-phishing attempt.
+
+If you need to actually rotate or revoke a credential (not just diagnose), see
+`docs/runbooks/credential-rotation.md` for the step-by-step, no-secret process.
