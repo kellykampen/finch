@@ -28,11 +28,12 @@ export function parseArgs(argv: string[], flags: { valueFlags?: string[]; boolFl
       continue;
     }
     if (!sawTerminator && valueFlags.has(arg)) {
-      const value = argv[++i];
-      if (value === undefined) {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("-")) {
         throw new FinchError("USAGE_ERROR", `Missing value for ${arg}`);
       }
       values[arg] = value;
+      i++;
       continue;
     }
     if (!sawTerminator && boolFlags.has(arg)) {

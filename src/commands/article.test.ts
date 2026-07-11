@@ -121,6 +121,15 @@ describe("runArticleDraft", () => {
     await expect(runArticleDraft([], { getTransport: () => transport })).rejects.toThrow(FinchError);
   });
 
+  test("throws USAGE_ERROR when a value flag is followed by another flag", async () => {
+    const transport = fakeTransport({
+      createArticleDraft: async () => ({ id: "x" }),
+    });
+
+    await expect(runArticleDraft(["Title", "path.md", "--cover", "--dry-run"], { getTransport: () => transport })).rejects.toThrow(FinchError);
+    await expect(runArticleDraft(["--cover", "--dry-run", "Title", "path.md"], { getTransport: () => transport })).rejects.toThrow(FinchError);
+  });
+
   test("--dry-run validates and returns plan without calling transport", async () => {
     let called = false;
     const transport = fakeTransport({
@@ -282,6 +291,17 @@ describe("runArticlePost", () => {
     await expect(runArticlePost(["--title", "Title Only"], { getTransport: () => transport })).rejects.toThrow(
       FinchError,
     );
+  });
+
+  test("throws USAGE_ERROR when a value flag is followed by another flag", async () => {
+    const transport = fakeTransport({
+      createArticleDraft: async () => ({ id: "x" }),
+      publishArticleDraft: async () => ({ post_id: "x" }),
+    });
+
+    await expect(runArticlePost(["path.md", "--title", "Title", "--cover", "--dry-run"], { getTransport: () => transport })).rejects.toThrow(FinchError);
+    await expect(runArticlePost(["path.md", "--title", "--dry-run"], { getTransport: () => transport })).rejects.toThrow(FinchError);
+    await expect(runArticlePost(["path.md", "--title", "--cover", "cover.png"], { getTransport: () => transport })).rejects.toThrow(FinchError);
   });
 
   test("--dry-run validates and returns plan without calling transport", async () => {

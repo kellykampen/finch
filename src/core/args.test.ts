@@ -23,6 +23,10 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--file"], { valueFlags: ["--file"] })).toThrow(FinchError);
   });
 
+  test("throws USAGE_ERROR when the next token starts with '-' (another flag)", () => {
+    expect(() => parseArgs(["--file", "--dry-run"], { valueFlags: ["--file"], boolFlags: ["--dry-run"] })).toThrow(FinchError);
+  });
+
   test("'--' forces everything after it to be positional, even a token matching a bool flag", () => {
     const result = parseArgs(["--", "--dry-run"], { boolFlags: ["--dry-run"] });
     expect(result.bools["--dry-run"]).toBeUndefined();
