@@ -136,44 +136,41 @@ DRYRUN_OK='const r=JSON.parse(process.argv[1]); if(!r.ok) throw new Error("ok=fa
 AUTH_ERR='const r=JSON.parse(process.argv[1]); if(r.ok) throw new Error("expected ok=false"); if(r.error.code!=="AUTH_ERROR") throw new Error("expected AUTH_ERROR, got "+r.error.code);'
 USAGE_ERR='const r=JSON.parse(process.argv[1]); if(r.ok) throw new Error("expected ok=false"); if(r.error.code!=="USAGE_ERROR") throw new Error("expected USAGE_ERROR, got "+r.error.code);'
 
-echo "--- FIN-46 surface rehearsal (dry-run: parses + validates, no network) ---"
+echo "--- 1. Dry-run cases: parses + validates, no network ---"
 
-# 1. Image post with alt text.
+# Case 1: Image post with alt text.
 check "image post + alt (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); const w=r.data.wouldSend; if(!w.media.includes("photo.png")) throw new Error("media missing: "+JSON.stringify(w)); if(!w.alt.includes("screenshot of the finch CLI")) throw new Error("alt missing: "+JSON.stringify(w));' \
   -- post "Ship it" --media photo.png --alt "screenshot of the finch CLI" --dry-run --json
 
-# 2. GIF/video upload path (classification is by extension; no file read).
+# Case 2: GIF/video upload path (classification is by extension; no file read).
 check "video (.mp4) post (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(!r.data.wouldSend.media.includes("demo.mp4")) throw new Error("mp4 missing");' \
   -- post "demo clip" --media demo.mp4 --dry-run --json
 check "gif (.gif) post (dry-run)" 0 "$DRYRUN_OK" \
   -- post "loop" --media loop.gif --dry-run --json
 
-# 5. Delete / cleanup command planning (dry-run, from a URL).
+# Case 3: Delete / cleanup command planning (dry-run, from a URL).
 check "delete from URL (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(r.data.wouldSend.tweet_id!=="1755555555555555555") throw new Error("tweet_id: "+JSON.stringify(r.data));' \
   -- delete "https://x.com/example/status/1755555555555555555" --dry-run --json
 
 echo ""
-echo "--- FIN-46 article path (no dry-run seam: must fail-safe before network) ---"
+echo "--- 2. Fail-safe cases: no --dry-run seam, must stop before network ---"
 
-# 3. Article draft / publish / post — with no config they must stop at AUTH_ERROR
-#    (exit 3) BEFORE any network request.
+# Case 4: Article draft / publish / post — with no config they must stop at
+#    AUTH_ERROR (exit 3) BEFORE any network request.
 check "article draft (fail-safe, no creds)" 3 "$AUTH_ERR" \
   -- article draft "Launch Notes" ./notes.md --json
 check "article publish (fail-safe, no creds)" 3 "$AUTH_ERR" \
   -- article publish 1755555555555555555 --json
 check "article post (fail-safe, no creds)" 3 "$AUTH_ERR" \
   -- article post ./notes.md --title "Launch Notes" --json
-# Article arg parsing still rejects a missing arg as a usage error, before auth.
-check "article draft missing args (usage)" 2 "$USAGE_ERR" \
-  -- article draft --json
 
 echo ""
-echo "--- Live-write guard: mutating commands without --dry-run and no creds ---"
+echo "--- 3. Live-write guard cases: mutating commands without --dry-run and no creds ---"
 
-# These prove the gate fails safely before any live post/delete/upload.
+# Case 5: prove the gate fails safely before any live post/delete/upload.
 check "post (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
   -- post "would be a live post" --json
 check "delete (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
@@ -182,8 +179,12 @@ check "thread (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
   -- thread "one" "two" --json
 
 echo ""
-echo "--- Media/alt validation (parse-level, still no network) ---"
+echo "--- 4. Validation cases: parse-level rejections (USAGE_ERROR), still no network ---"
 
+# Case 6: article arg parsing still rejects a missing arg as a usage error, before auth.
+check "article draft missing args (usage)" 2 "$USAGE_ERR" \
+  -- article draft --json
+# Case 7: media/alt validation.
 check "too many images rejected" 2 "$USAGE_ERR" \
   -- post "x" --media a.png --media b.png --media c.png --media d.png --media e.png --dry-run --json
 check "image + video mix rejected" 2 "$USAGE_ERR" \
@@ -192,9 +193,9 @@ check "more alts than images rejected" 2 "$USAGE_ERR" \
   -- post "x" --media a.png --alt "one" --alt "two" --dry-run --json
 
 echo ""
-echo "--- File-thread path (dry-run over a --file, no network) ---"
+echo "--- 5. File-thread cases: dry-run over a --file, no network ---"
 
-# 4. File-driven thread: needs a real file inside the sandbox HOME.
+# Case 8: file-driven thread — needs a real file inside the sandbox HOME.
 check_file_thread() {
   TOTAL=$((TOTAL + 1))
   local sandbox rc out

@@ -20,20 +20,31 @@ This complements — it does not replace — the binary-provenance preflight in
 
 ## What it covers (FIN-46 surfaces)
 
-| FIN-46 surface | Rehearsed as | Expected outcome |
-|---|---|---|
-| Image post with alt text | `post --media … --alt … --dry-run` | exit 0, `dryRun:true`, media+alt echoed in `wouldSend` |
-| GIF/video upload path | `post --media clip.mp4 / loop.gif --dry-run` | exit 0, `dryRun:true` (extension-classified, no file read) |
-| Article draft / publish / post | `article draft|publish|post …` (no `--dry-run` seam) | exit 3 `AUTH_ERROR` — stops before any network |
-| File-thread path | `thread --file … --number --dry-run` | exit 0, `dryRun:true`, 2 numbered posts |
-| Delete / cleanup planning | `delete <url> --dry-run` | exit 0, `dryRun:true`, resolved `tweet_id` |
+The gate runs its cases in five clearly separated, sequentially numbered groups, in this order:
 
-Plus guard cases that prove the gate is safe:
+1. **Dry-run** — surfaces that resolve entirely on the dry-run path, no network:
 
-- **Live-write guard** — `post` / `delete` / `thread` *without* `--dry-run` and with no config
-  must fail with `AUTH_ERROR` (exit 3) **before** any live post/delete/upload.
-- **Media/alt validation** — too many images, image+video mix, and more alts than images are
-  rejected as `USAGE_ERROR` (exit 2) at parse time.
+   | FIN-46 surface | Rehearsed as | Expected outcome |
+   |---|---|---|
+   | Image post with alt text | `post --media … --alt … --dry-run` | exit 0, `dryRun:true`, media+alt echoed in `wouldSend` |
+   | GIF/video upload path | `post --media clip.mp4 / loop.gif --dry-run` | exit 0, `dryRun:true` (extension-classified, no file read) |
+   | Delete / cleanup planning | `delete <url> --dry-run` | exit 0, `dryRun:true`, resolved `tweet_id` |
+
+2. **Fail-safe** — surfaces with no `--dry-run` seam; must stop before any network call:
+
+   | FIN-46 surface | Rehearsed as | Expected outcome |
+   |---|---|---|
+   | Article draft / publish / post | `article draft|publish|post …` (no `--dry-run` seam) | exit 3 `AUTH_ERROR` — stops before any network |
+
+3. **Live-write guard** — `post` / `delete` / `thread` *without* `--dry-run` and with no config
+   must fail with `AUTH_ERROR` (exit 3) **before** any live post/delete/upload.
+
+4. **Validation** — parse-level rejections, still no network: a missing required `article draft`
+   argument, too many images, an image+video mix, and more alts than images are all rejected as
+   `USAGE_ERROR` (exit 2).
+
+5. **File-thread** — `thread --file … --number --dry-run` — exit 0, `dryRun:true`, 2 numbered
+   posts.
 
 ## How it stays offline (by construction)
 
