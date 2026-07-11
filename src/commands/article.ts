@@ -8,9 +8,24 @@ export interface ArticleDraftResult {
   id: string;
 }
 
+export interface ArticleDraftDryRunResult {
+  dryRun: true;
+  wouldSend: { title: string; markdownPath: string; coverPath: string | undefined };
+}
+
 export interface ArticlePublishResult {
   post_id: string;
   url: string;
+}
+
+export interface ArticlePublishDryRunResult {
+  dryRun: true;
+  wouldSend: { draftId: string };
+}
+
+export interface ArticlePostDryRunResult {
+  dryRun: true;
+  wouldSend: { title: string; markdownPath: string; coverPath: string | undefined };
 }
 
 export interface ArticleDraftDeps {
@@ -54,15 +69,17 @@ async function createDraftFromMarkdown(
 export async function runArticleDraft(
   argv: string[],
   deps: ArticleDraftDeps = {},
-): Promise<{ data: ArticleDraftResult; human: string }> {
+): Promise<{ data: ArticleDraftResult | ArticleDraftDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const terminatorIndex = argv.indexOf("--");
   const flagRegion = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
-  const { values, positionals } = parseArgs(flagRegion, {
+  const { values, bools, positionals } = parseArgs(flagRegion, {
     valueFlags: ["--cover"],
+    boolFlags: ["--dry-run"],
+    strict: true,
   });
 
   const unknownFlag = positionals.find((p) => p.startsWith("-"));
@@ -79,6 +96,13 @@ export async function runArticleDraft(
     throw new FinchError("USAGE_ERROR", "finch article draft requires <title> and <markdown-file-path>");
   }
 
+  if (bools["--dry-run"]) {
+    return {
+      data: { dryRun: true, wouldSend: { title, markdownPath, coverPath: values["--cover"] } },
+      human: `Would create article draft: ${title} from ${markdownPath}${values["--cover"] ? ` with cover: ${values["--cover"]}` : ""}`,
+    };
+  }
+
   const transport = getTransport();
   const created = await createDraftFromMarkdown(transport, title, markdownPath, values["--cover"]);
   return { data: { id: created.id }, human: `Created article draft ${created.id}` };
@@ -91,15 +115,16 @@ export async function runArticleDraft(
 export async function runArticlePublish(
   argv: string[],
   deps: ArticleDraftDeps = {},
-): Promise<{ data: ArticlePublishResult; human: string }> {
+): Promise<{ data: ArticlePublishResult | ArticlePublishDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const terminatorIndex = argv.indexOf("--");
   const flagRegion = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
-  const { positionals } = parseArgs(flagRegion, {
+  const { bools, positionals } = parseArgs(flagRegion, {
     valueFlags: [],
+    boolFlags: ["--dry-run"],
   });
 
   const unknownFlag = positionals.find((p) => p.startsWith("-"));
@@ -112,6 +137,13 @@ export async function runArticlePublish(
 
   if (!draftId) {
     throw new FinchError("USAGE_ERROR", "finch article publish requires <draft_id>");
+  }
+
+  if (bools["--dry-run"]) {
+    return {
+      data: { dryRun: true, wouldSend: { draftId } },
+      human: `Would publish article draft: ${draftId}`,
+    };
   }
 
   const transport = getTransport();
@@ -128,15 +160,17 @@ export async function runArticlePublish(
 export async function runArticlePost(
   argv: string[],
   deps: ArticleDraftDeps = {},
-): Promise<{ data: ArticlePublishResult; human: string }> {
+): Promise<{ data: ArticlePublishResult | ArticlePostDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
   const terminatorIndex = argv.indexOf("--");
   const flagRegion = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
-  const { values, positionals } = parseArgs(flagRegion, {
+  const { values, bools, positionals } = parseArgs(flagRegion, {
     valueFlags: ["--title", "--cover"],
+    boolFlags: ["--dry-run"],
+    strict: true,
   });
 
   const unknownFlag = positionals.find((p) => p.startsWith("-"));
@@ -151,6 +185,13 @@ export async function runArticlePost(
 
   if (!markdownPath || !title) {
     throw new FinchError("USAGE_ERROR", "finch article post requires <markdown-file> and --title <title>");
+  }
+
+  if (bools["--dry-run"]) {
+    return {
+      data: { dryRun: true, wouldSend: { title, markdownPath, coverPath } },
+      human: `Would post article: ${title} from ${markdownPath}${coverPath ? ` with cover: ${coverPath}` : ""}`,
+    };
   }
 
   const transport = getTransport();

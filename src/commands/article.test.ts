@@ -120,6 +120,40 @@ describe("runArticleDraft", () => {
 
     await expect(runArticleDraft([], { getTransport: () => transport })).rejects.toThrow(FinchError);
   });
+
+  test("throws USAGE_ERROR when a value flag is followed by another flag", async () => {
+    const transport = fakeTransport({
+      createArticleDraft: async () => ({ id: "x" }),
+    });
+
+    await expect(
+      runArticleDraft(["Title", "path.md", "--cover", "--dry-run"], { getTransport: () => transport }),
+    ).rejects.toThrow(FinchError);
+    await expect(
+      runArticleDraft(["--cover", "--dry-run", "Title", "path.md"], { getTransport: () => transport }),
+    ).rejects.toThrow(FinchError);
+  });
+
+  test("--dry-run validates and returns plan without calling transport", async () => {
+    let called = false;
+    const transport = fakeTransport({
+      createArticleDraft: async () => {
+        called = true;
+        return { id: "x" };
+      },
+    });
+
+    const result = await runArticleDraft(["My Title", "/some/path.md", "--cover", "/cover.png", "--dry-run"], {
+      getTransport: () => transport,
+    });
+
+    expect(called).toBe(false);
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: { title: "My Title", markdownPath: "/some/path.md", coverPath: "/cover.png" },
+    });
+    expect(result.human).toBe("Would create article draft: My Title from /some/path.md with cover: /cover.png");
+  });
 });
 
 describe("runArticlePublish", () => {
@@ -153,6 +187,25 @@ describe("runArticlePublish", () => {
       expect((err as FinchError).code).toBe("USAGE_ERROR");
       expect((err as FinchError).message).toContain("requires <draft_id>");
     }
+  });
+
+  test("--dry-run validates and returns plan without calling transport", async () => {
+    let called = false;
+    const transport = fakeTransport({
+      publishArticleDraft: async () => {
+        called = true;
+        return { post_id: "x" };
+      },
+    });
+
+    const result = await runArticlePublish(["draft-123", "--dry-run"], { getTransport: () => transport });
+
+    expect(called).toBe(false);
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: { draftId: "draft-123" },
+    });
+    expect(result.human).toBe("Would publish article draft: draft-123");
   });
 });
 
@@ -215,7 +268,7 @@ describe("runArticlePost", () => {
         getTransport: () => transport,
       });
 
-      expect(result.data.post_id).toBe("5566778899");
+      expect(result.data).toEqual({ post_id: "5566778899", url: "https://x.com/i/web/status/5566778899" });
       expect(uploadedPaths).toEqual([coverPath]);
       expect(createdWith.title).toBe("Covered Post");
       expect(createdWith.coverMediaId).toBe(`id-for-${coverPath}`);
@@ -242,5 +295,50 @@ describe("runArticlePost", () => {
     await expect(runArticlePost(["--title", "Title Only"], { getTransport: () => transport })).rejects.toThrow(
       FinchError,
     );
+  });
+
+  test("throws USAGE_ERROR when a value flag is followed by another flag", async () => {
+    const transport = fakeTransport({
+      createArticleDraft: async () => ({ id: "x" }),
+      publishArticleDraft: async () => ({ post_id: "x" }),
+    });
+
+    await expect(
+      runArticlePost(["path.md", "--title", "Title", "--cover", "--dry-run"], { getTransport: () => transport }),
+    ).rejects.toThrow(FinchError);
+    await expect(
+      runArticlePost(["path.md", "--title", "--dry-run"], { getTransport: () => transport }),
+    ).rejects.toThrow(FinchError);
+    await expect(
+      runArticlePost(["path.md", "--title", "--cover", "cover.png"], { getTransport: () => transport }),
+    ).rejects.toThrow(FinchError);
+  });
+
+  test("--dry-run validates and returns plan without calling transport", async () => {
+    let called = false;
+    const transport = fakeTransport({
+      createArticleDraft: async () => {
+        called = true;
+        return { id: "x" };
+      },
+      publishArticleDraft: async () => {
+        called = true;
+        return { post_id: "x" };
+      },
+    });
+
+    const result = await runArticlePost(
+      ["/some/path.md", "--title", "My Title", "--cover", "/cover.png", "--dry-run"],
+      {
+        getTransport: () => transport,
+      },
+    );
+
+    expect(called).toBe(false);
+    expect(result.data).toEqual({
+      dryRun: true,
+      wouldSend: { title: "My Title", markdownPath: "/some/path.md", coverPath: "/cover.png" },
+    });
+    expect(result.human).toBe("Would post article: My Title from /some/path.md with cover: /cover.png");
   });
 });

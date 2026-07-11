@@ -24,7 +24,7 @@ This complements — it does not replace — the binary-provenance preflight in
 |---|---|---|
 | Image post with alt text | `post --media … --alt … --dry-run` | exit 0, `dryRun:true`, media+alt echoed in `wouldSend` |
 | GIF/video upload path | `post --media clip.mp4 / loop.gif --dry-run` | exit 0, `dryRun:true` (extension-classified, no file read) |
-| Article draft / publish / post | `article draft|publish|post …` (no `--dry-run` seam) | exit 3 `AUTH_ERROR` — stops before any network |
+| Article draft / publish / post | `article draft/publish/post … --dry-run` | exit 0, `dryRun:true`, output varies by subcommand |
 | File-thread path | `thread --file … --number --dry-run` | exit 0, `dryRun:true`, 2 numbered posts |
 | Delete / cleanup planning | `delete <url> --dry-run` | exit 0, `dryRun:true`, resolved `tweet_id` |
 
@@ -43,8 +43,6 @@ Plus guard cases that prove the gate is safe:
 - Mutating commands resolve their transport lazily: `--dry-run` returns
   `{dryRun:true, wouldSend:{…}}` **before** `getTransport()` is ever called — no config, no
   network.
-- `article` has no `--dry-run` seam, so with an empty sandbox `HOME` it fails at
-  `resolveOAuth2Transport()` with `AUTH_ERROR` **before** any network request.
 
 Because the only reachable outcomes are dry-run (exit 0), `AUTH_ERROR` (exit 3), or
 `USAGE_ERROR` (exit 2), no live post/delete/upload can occur — even if the gate is run on a

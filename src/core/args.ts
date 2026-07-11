@@ -6,9 +6,13 @@ export interface ParsedArgs {
   positionals: string[];
 }
 
-export function parseArgs(argv: string[], flags: { valueFlags?: string[]; boolFlags?: string[] } = {}): ParsedArgs {
+export function parseArgs(
+  argv: string[],
+  flags: { valueFlags?: string[]; boolFlags?: string[]; strict?: boolean } = {},
+): ParsedArgs {
   const valueFlags = new Set(flags.valueFlags ?? []);
   const boolFlags = new Set(flags.boolFlags ?? []);
+  const strict = flags.strict ?? false;
   const values: Record<string, string> = {};
   const bools: Record<string, boolean> = {};
   const positionals: string[] = [];
@@ -28,11 +32,19 @@ export function parseArgs(argv: string[], flags: { valueFlags?: string[]; boolFl
       continue;
     }
     if (!sawTerminator && valueFlags.has(arg)) {
-      const value = argv[++i];
-      if (value === undefined) {
+      const value = argv[i + 1];
+      // `strict` rejects a value that's itself a *registered* flag for this call
+      // (e.g. `--title --dry-run` never lets "--dry-run" become the title). It's
+      // opt-in rather than a blanket `startsWith("-")` check because call sites
+      // like the MCP tool bridge (src/mcp/tools.ts) build argv from trusted,
+      // already-paired flag/value input where the value can legitimately be any
+      // string, including one that happens to look like a flag (e.g. an --alt
+      // value of literally "--media").
+      if (value === undefined || (strict && (valueFlags.has(value) || boolFlags.has(value)))) {
         throw new FinchError("USAGE_ERROR", `Missing value for ${arg}`);
       }
       values[arg] = value;
+      i++;
       continue;
     }
     if (!sawTerminator && boolFlags.has(arg)) {
