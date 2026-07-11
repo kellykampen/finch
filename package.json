@@ -18,7 +18,8 @@
     "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64",
     "lint": "biome check .",
     "lint:fix": "biome check . --write",
-    "preflight": "git rev-parse HEAD && bun run build && ./finch --version"
+    "preflight": "git rev-parse HEAD && bun run build && ./finch --version",
+    "rehearse": "./scripts/e2e-rehearsal.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
