@@ -133,11 +133,72 @@ behind. Re-running `finch auth` overwrites the stored credentials — there is n
 update via the wizard (use `finch config set` for non-secret fields; see below).
 
 Token refresh is transparent while the refresh token remains valid. Finch stores
-`expiresAt` and refreshes the access token automatically before API calls.
+`expiresAt` and refreshes the access token automatically before API calls — and,
+if X rejects an access token *before* its stored expiry, it refreshes once
+reactively and retries rather than forcing a re-login. Because X's refresh
+tokens are single-use (each refresh rotates them), Finch serializes refreshes
+across concurrent commands / MCP tool calls with a short-lived advisory lock
+file at `~/.finch/config.refresh.lock`: exactly one caller spends the old token,
+and the others re-read and reuse the freshly rotated credential. The lock file
+holds only a timestamp — never any secret. Re-authentication is only required
+once the refresh token itself expires or is revoked.
 
 **Hard cutover:** if you have an old (pre-OAuth 2.0) `~/.finch/config` from before this
 migration, Finch will refuse to read it and report a clear error telling you to run
 `finch auth` again. There is no automatic migration — you must re-authenticate.
+
+### Verifying durable sessions (manual, ≥24h no-relogin)
+
+The durable-session guarantee above ("re-authentication is only required once the refresh
+token itself expires or is revoked") is **time-dependent** and cannot be a known-answer line
+in the runtime regression checklist — X OAuth 2.0 access tokens live only ~2h, so proving the
+session survives requires wall-clock elapsed time across several access-token expiries. This
+is the manual acceptance procedure for that target; run it once per change that touches the
+refresh/lock path, and record the evidence on the PR.
+
+**Safety (non-negotiable):** run the whole procedure under a sandboxed `$HOME` so it never
+reads or refreshes the operator's real `~/.finch/config` (see fleet rule 12). Every `finch`
+invocation below inherits that sandboxed home:
+
+```bash
+export HOME="$(mktemp -d)"   # sandbox; real ~/.finch/config is never touched
+```
+
+1. **Authenticate once (T0).** Run `finch auth` a single time (real Client ID, complete the
+   browser consent). This is the *only* time `finch auth` may be run for the whole test —
+   running it again invalidates the result.
+2. **Record the starting token expiry.** `finch config get auth.expiresAt --json` — note the
+   value (it should be ~2h out). The access token, not the refresh token, is what expires here.
+3. **Baseline call (T0).** `finch whoami --json` (or `finch auth status --json`) → exits 0 with
+   `valid: true`. The session is live.
+4. **Cross the first access-token expiry.** Wait past `auth.expiresAt` (>2h) **without** re-running
+   `finch auth`, then run `finch whoami --json` again. It must exit 0, and
+   `finch config get auth.expiresAt --json` must now show a *later* `expiresAt` than step 2 —
+   proving Finch transparently refreshed the access token rather than serving a stale/cached one.
+5. **Checkpoints across the ≥24h window.** Repeat the step-4 call at a few points spanning at
+   least 24 hours (e.g. T0+3h, +12h, +24h). At each checkpoint the command exits 0, and no
+   `finch auth` has been run since step 1. **Pass = the final ≥24h checkpoint returns valid data
+   with exit 0 and zero interactive re-auth. Fail = exit code 3 (auth error) or any prompt to
+   re-authenticate at any checkpoint.**
+6. **Concurrency check at an expiry boundary.** Just after an `expiresAt`, fire several commands
+   in parallel so they race the refresh (single-use refresh-token rotation is the risk):
+
+   ```bash
+   for i in $(seq 1 10); do finch whoami --json & done; wait
+   ```
+
+   All 10 must exit 0; none may exit 3. This validates the `~/.finch/config.refresh.lock`
+   serialization — exactly one caller spends the old refresh token and the rest re-read and
+   reuse the freshly rotated credential, so a concurrent race never strands a command into a
+   forced re-login.
+7. **Out of scope for a pass.** Re-authentication *is* expected once the refresh token itself
+   expires or is revoked — this procedure deliberately does not run that long, and a re-login
+   prompt only after the refresh-token lifetime is correct behavior, not a failure.
+
+**Evidence to capture on the PR:** the `expiresAt` values before/after step 4 (showing rotation),
+the exit codes at each ≥24h checkpoint, and confirmation that `finch auth` was run exactly once
+(at T0). Never paste `auth.accessToken` / `auth.refreshToken` values — `finch config get`
+already masks them to the last 4 characters, and raw tokens must not appear in PR evidence.
 
 ### Never logged / never echoed
 
