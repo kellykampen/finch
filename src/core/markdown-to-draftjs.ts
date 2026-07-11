@@ -114,6 +114,7 @@ const ORDERED_LIST_RE = /^(\s*)(\d+)\.\s+(.*)$/;
 const BLOCKQUOTE_RE = /^(\s*)>+\s?(.*)$/;
 const FENCE_RE = /^```(\S*)\s*$/;
 const LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)/;
+const BARE_URL_RE = /^https?:\/\/[^\s<>]+/;
 const IMAGE_RE = /^!\[([^\]]*)\]\([^)]+\)/;
 const MENTION_RE = /^@([A-Za-z0-9_]+)/;
 const HASHTAG_RE = /^#([A-Za-z0-9_]+)/;
@@ -169,11 +170,39 @@ function canToggleUnderscoreEmphasis(markup: string, index: number): boolean {
   return !(isAlphanumeric(prev) && isAlphanumeric(next));
 }
 
+/** Strips trailing sentence punctuation, keeping balanced parens/brackets that belong to the URL. */
+function trimTrailingPunctuation(url: string): string {
+  let result = url;
+  let trimmed = true;
+  while (trimmed) {
+    trimmed = false;
+    const last = result.charAt(result.length - 1);
+    if (last === "." || last === "," || last === "!" || last === "?") {
+      result = result.slice(0, -1);
+      trimmed = true;
+    } else if (last === ")" && countChar(result, "(") < countChar(result, ")")) {
+      result = result.slice(0, -1);
+      trimmed = true;
+    } else if (last === "]" && countChar(result, "[") < countChar(result, "]")) {
+      result = result.slice(0, -1);
+      trimmed = true;
+    }
+  }
+  return result;
+}
+
+function countChar(value: string, char: string): number {
+  let count = 0;
+  for (const c of value) if (c === char) count += 1;
+  return count;
+}
+
 function parseInline(
   markup: string,
   getKey: () => string,
   inheritedStyles: Iterable<InlineStyle> = [],
   inheritedEntityKey?: string,
+  autolinkBareUrls = true,
 ): { chars: CharStyle[]; entities: Record<string, ParsedEntity> } {
   const chars: CharStyle[] = [];
   const entities: Record<string, ParsedEntity> = {};
@@ -197,7 +226,7 @@ function parseInline(
       const url = capture(linkMatch, 2);
       const entityKey = getKey();
       entities[entityKey] = { type: "LINK", mutability: "MUTABLE", data: { url } };
-      const nested = parseInline(linkText, getKey, new Set(activeStyles), entityKey);
+      const nested = parseInline(linkText, getKey, new Set(activeStyles), entityKey, false);
       chars.push(...nested.chars);
       Object.assign(entities, nested.entities);
       i += linkMatch[0].length;
@@ -212,6 +241,20 @@ function parseInline(
     }
 
     if (canStartEntity(markup, i)) {
+      if (autolinkBareUrls) {
+        const bareUrlMatch = remainder.match(BARE_URL_RE);
+        if (bareUrlMatch) {
+          const url = trimTrailingPunctuation(bareUrlMatch[0]);
+          if (url.length > 0) {
+            const entityKey = getKey();
+            entities[entityKey] = { type: "LINK", mutability: "MUTABLE", data: { url } };
+            pushText(url, entityKey);
+            i += url.length;
+            continue;
+          }
+        }
+      }
+
       const mentionMatch = remainder.match(MENTION_RE);
       if (mentionMatch) {
         const entityKey = getKey();
@@ -418,8 +461,8 @@ interface InlineParseResult {
   entities: Record<string, ParsedEntity>;
 }
 
-function parseInlineBlock(content: string, getKey: () => string): InlineParseResult {
-  const { chars, entities } = parseInline(content, getKey);
+function parseInlineBlock(content: string, getKey: () => string, autolinkBareUrls = true): InlineParseResult {
+  const { chars, entities } = parseInline(content, getKey, [], undefined, autolinkBareUrls);
   const text = chars.map((char) => char.char).join("");
   return {
     text,
@@ -434,8 +477,14 @@ interface BuiltBlock {
   entities: Record<string, ParsedEntity>;
 }
 
-function buildBlock(type: DraftBlockType, depth: number, content: string, getKey: () => string): BuiltBlock {
-  const { text, inlineStyleRanges, entityRanges, entities } = parseInlineBlock(content, getKey);
+function buildBlock(
+  type: DraftBlockType,
+  depth: number,
+  content: string,
+  getKey: () => string,
+  autolinkBareUrls = true,
+): BuiltBlock {
+  const { text, inlineStyleRanges, entityRanges, entities } = parseInlineBlock(content, getKey, autolinkBareUrls);
   return {
     block: {
       key: getKey(),
@@ -469,7 +518,7 @@ function buildBlocks(
   for (const segment of segments) {
     if (segment.kind === "code") {
       flushParagraph();
-      const built = buildBlock("unstyled", 0, segment.code, getKey);
+      const built = buildBlock("unstyled", 0, segment.code, getKey, false);
       blocks.push(built.block);
       Object.assign(entities, built.entities);
       continue;
