@@ -205,7 +205,11 @@ interface MediaClientLike {
     options?: { command?: "STATUS" },
   ): Promise<{ data?: Record<string, unknown>; errors?: unknown }>;
   createMetadata(options: {
-    body: Record<string, unknown>;
+    // Mirrors the SDK's `MetadataCreateRequest`: the media `id` is required and
+    // all per-media fields (alt text, etc.) live under `metadata`. Typing it
+    // here — rather than `Record<string, unknown>` — makes the compiler reject
+    // any call that omits `id`, preventing the FIN-66 missing-`id` regression.
+    body: { id: string; metadata: Record<string, unknown> };
   }): Promise<{ data?: Record<string, unknown>; errors?: unknown[] }>;
 }
 
@@ -644,8 +648,14 @@ export class ByokTransport implements XTransport {
 
   async setMediaAltText(mediaId: string, altText: string): Promise<void> {
     try {
+      // X's v2 POST /2/media/metadata requires the media `id` at the top level
+      // and nests per-media fields under `metadata` (alt text as
+      // `metadata.alt_text.text`). The SDK snake-cases keys before sending, so
+      // these already-snake keys pass through unchanged. Sending `media_id` /
+      // top-level `alt_text` (the previous shape) omitted the required `id` and
+      // X silently dropped the alt text — see FIN-66.
       const res = await this.mediaClient.createMetadata({
-        body: { mediaId, altText: { text: altText } },
+        body: { id: mediaId, metadata: { alt_text: { text: altText } } },
       });
       if (res.errors && res.errors.length > 0) {
         throw new FinchError("CLIENT_ERROR", "X API did not confirm the media metadata", res.errors ?? null);
