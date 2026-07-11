@@ -207,6 +207,17 @@ already masks them to the last 4 characters, and raw tokens must not appear in P
 values, or the refresh token, to stdout, stderr, log files, or error `detail` objects — an
 X API 401 surfaces the API's error body with credentials redacted, not the key that failed.
 
+**No-secret diagnostics set (support handoffs, FIN-72).** The commands safe to paste into a
+bug report or support thread are `finch --version`, `finch auth status --json`
+(`{configured, valid, username}`), `finch whoami --json` (`{id, username, name}`),
+`finch config path` (the path, not the contents), and `which finch` — none of which emit a
+credential. `finch config get auth.*` is deliberately **excluded** from that set: last-4
+masking is enough to stop a full leak, but a masked fragment is still more than a diagnostic
+needs, so the guidance keeps it out of shared logs entirely. See the README's "Sharing
+diagnostics safely" section for the copy-paste snippet and the do-not-share list. The
+`src/commands/*.test.ts` `no-secret diagnostics` cases pin the token-free result shape of
+these commands so a future field addition can't silently leak a secret through them.
+
 ## Inspiration mapping
 
 **bird** (https://github.com/jawond/bird) — cookie-based, human-first X CLI. Borrowed:
