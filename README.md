@@ -390,3 +390,34 @@ which finch        # confirm you're not shadowing a Homebrew install with a
   write/media/article/thread/delete surfaces offline with `bun run rehearse` — a no-live,
   no-credentials gate that proves the commands parse, validate, and fail safely before any
   network call. See `docs/release/e2e-rehearsal.md`.
+
+### Sharing diagnostics safely (no secrets)
+
+When you file a bug or hand a session to support, paste **only** the output of these
+commands. Every one of them is token-free by construction — none prints an access token,
+refresh token, or Client ID:
+
+```bash
+finch --version         # binary provenance — semver baked in at build time
+finch auth status --json # {configured, valid, username} — states, not secrets
+finch whoami --json      # {id, username, name} for the authenticated account
+finch config path        # the path to the config file, not its contents
+which finch              # which binary on your PATH is actually running
+```
+
+That set answers the questions a support handoff actually needs — *is it configured, is
+it valid, who is logged in, which binary, where does its config live* — without ever
+revealing a credential.
+
+**Do not paste, and support will never ask for:**
+
+- The contents of `~/.finch/config` (`cat`/`finch config path | xargs cat`) — it holds
+  your live OAuth tokens.
+- `finch config get auth.accessToken` / `auth.refreshToken` / `auth.clientId` — these are
+  masked to the last 4 characters, but even a masked fragment plus token length is more
+  than a diagnostic needs, so keep them out of shared logs.
+- Screenshots or scrollback of the `finch auth` browser flow's callback URL — the `code`
+  query parameter is a live authorization code.
+
+If someone asks you for any of the above to "debug" your account, treat it as a
+credential-phishing attempt.
