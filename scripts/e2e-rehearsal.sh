@@ -11,12 +11,9 @@
 # HOW IT STAYS OFFLINE (by construction, not by mocking):
 #   * Every invocation runs under a throwaway sandbox HOME (`mktemp -d`), so
 #     the real `~/.finch/config` (the CEO's live X credentials) is never read.
-#   * Mutating commands (`post`, `thread`, `delete`) resolve their transport
-#     lazily: `--dry-run` returns `{dryRun:true, wouldSend:{...}}` BEFORE
-#     `getTransport()` is ever called — no config, no network.
-#   * `article` has no `--dry-run` seam, so with an empty sandbox HOME it fails
-#     at `resolveOAuth2Transport()` with AUTH_ERROR (exit 3) BEFORE any network
-#     request — the fail-safe path this gate asserts.
+#   * Mutating commands (`post`, `thread`, `delete`, `article`) resolve their
+#     transport lazily: `--dry-run` returns `{dryRun:true, wouldSend:{...}}`
+#     BEFORE `getTransport()` is ever called — no config, no network.
 # Because the only two reachable outcomes are dry-run (exit 0) or
 # AUTH_ERROR/USAGE_ERROR, no live post/delete/upload can occur even if this is
 # run on a machine that has real credentials configured.
@@ -156,17 +153,19 @@ check "delete from URL (dry-run)" 0 \
   -- delete "https://x.com/example/status/1755555555555555555" --dry-run --json
 
 echo ""
-echo "--- FIN-46 article path (no dry-run seam: must fail-safe before network) ---"
+echo "--- FIN-46 article path (dry-run, no network) ---"
 
-# 3. Article draft / publish / post — with no config they must stop at AUTH_ERROR
-#    (exit 3) BEFORE any network request.
-check "article draft (fail-safe, no creds)" 3 "$AUTH_ERR" \
-  -- article draft "Launch Notes" ./notes.md --json
-check "article publish (fail-safe, no creds)" 3 "$AUTH_ERR" \
-  -- article publish 1755555555555555555 --json
-check "article post (fail-safe, no creds)" 3 "$AUTH_ERR" \
-  -- article post ./notes.md --title "Launch Notes" --json
-# Article arg parsing still rejects a missing arg as a usage error, before auth.
+check "article draft (dry-run)" 0 \
+  'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); if(r.data.wouldSend.title!=="Launch Notes") throw new Error("title missing");' \
+  -- article draft "Launch Notes" ./notes.md --dry-run --json
+check "article publish (dry-run)" 0 \
+  'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); if(r.data.wouldSend.draftId!=="1755555555555555555") throw new Error("draftId missing");' \
+  -- article publish 1755555555555555555 --dry-run --json
+check "article post (dry-run)" 0 \
+  'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); if(r.data.wouldSend.title!=="Launch Notes") throw new Error("title missing");' \
+  -- article post ./notes.md --title "Launch Notes" --dry-run --json
+
+# Article arg parsing still rejects a missing arg as a usage error.
 check "article draft missing args (usage)" 2 "$USAGE_ERR" \
   -- article draft --json
 
@@ -180,6 +179,12 @@ check "delete (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
   -- delete 1755555555555555555 --json
 check "thread (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
   -- thread "one" "two" --json
+check "article draft (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
+  -- article draft "Launch Notes" ./notes.md --json
+check "article publish (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
+  -- article publish 1755555555555555555 --json
+check "article post (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
+  -- article post ./notes.md --title "Launch Notes" --json
 
 echo ""
 echo "--- Media/alt validation (parse-level, still no network) ---"
