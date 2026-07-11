@@ -24,7 +24,7 @@ This complements — it does not replace — the binary-provenance preflight in
 |---|---|---|
 | Image post with alt text | `post --media … --alt … --dry-run` | exit 0, `dryRun:true`, media+alt echoed in `wouldSend` |
 | GIF/video upload path | `post --media clip.mp4 / loop.gif --dry-run` | exit 0, `dryRun:true` (extension-classified, no file read) |
-| Article draft / publish / post | `article draft|publish|post … --dry-run` | exit 0, `dryRun:true`, output varies by subcommand |
+| Article draft / publish / post | `article draft/publish/post … --dry-run` | exit 0, `dryRun:true`, output varies by subcommand |
 | File-thread path | `thread --file … --number --dry-run` | exit 0, `dryRun:true`, 2 numbered posts |
 | Delete / cleanup planning | `delete <url> --dry-run` | exit 0, `dryRun:true`, resolved `tweet_id` |
 

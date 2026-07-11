@@ -169,6 +169,13 @@ check "article post (dry-run)" 0 \
 check "article draft missing args (usage)" 2 "$USAGE_ERR" \
   -- article draft --json
 
+# Regression (FIN-70): `--title` must not silently swallow `--dry-run` as its
+# value — strict flag-collision rejection catches this at parse time, before
+# it can fall through to a live AUTH_ERROR.
+check "article post --title swallowing --dry-run rejected (usage)" 2 \
+  'const r=JSON.parse(process.argv[1]); if(r.ok) throw new Error("expected ok=false"); if(r.error.code!=="USAGE_ERROR") throw new Error("expected USAGE_ERROR, got "+r.error.code); if(!String(r.error.message).includes("Missing value")) throw new Error("expected message to include Missing value: "+r.error.message);' \
+  -- article post ./notes.md --title --dry-run --json
+
 echo ""
 echo "--- Live-write guard: mutating commands without --dry-run and no creds ---"
 
