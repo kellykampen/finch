@@ -298,6 +298,136 @@ describe("markdownToContentState", () => {
     });
   });
 
+  test("auto-links bare http and https URLs with visible URL text", () => {
+    expect(convert("Visit https://example.com and http://foo.test today")).toEqual({
+      blocks: [
+        {
+          key: "c",
+          text: "Visit https://example.com and http://foo.test today",
+          type: "unstyled",
+          data: {},
+          entity_ranges: [
+            { offset: 6, length: 19, key: "0" },
+            { offset: 30, length: 15, key: "1" },
+          ],
+          inline_style_ranges: [],
+        },
+      ],
+      entities: [
+        {
+          key: "0",
+          value: { type: "link", mutability: "mutable", data: { url: "https://example.com" } },
+        },
+        {
+          key: "1",
+          value: { type: "link", mutability: "mutable", data: { url: "http://foo.test" } },
+        },
+      ],
+    });
+  });
+
+  test("excludes trailing sentence punctuation (. , ! ?) from the linked URL", () => {
+    const contentState = convert(
+      "https://example.com.\n\nhttps://example.com/page,\n\nhttps://example.com!\n\nhttps://example.com?",
+    );
+
+    expect(contentState.blocks.map(({ text, entity_ranges }) => ({ text, entity_ranges }))).toEqual([
+      { text: "https://example.com.", entity_ranges: [{ offset: 0, length: 19, key: "0" }] },
+      { text: "https://example.com/page,", entity_ranges: [{ offset: 0, length: 24, key: "1" }] },
+      { text: "https://example.com!", entity_ranges: [{ offset: 0, length: 19, key: "2" }] },
+      { text: "https://example.com?", entity_ranges: [{ offset: 0, length: 19, key: "3" }] },
+    ]);
+    expect(contentState.entities.map(({ value }) => value.data.url)).toEqual([
+      "https://example.com",
+      "https://example.com/page",
+      "https://example.com",
+      "https://example.com",
+    ]);
+  });
+
+  test("excludes an unmatched trailing ) or ] from the linked URL", () => {
+    const contentState = convert("(https://example.com)\n\n[https://example.com]");
+
+    expect(contentState.blocks.map(({ text, entity_ranges }) => ({ text, entity_ranges }))).toEqual([
+      { text: "(https://example.com)", entity_ranges: [{ offset: 1, length: 19, key: "0" }] },
+      { text: "[https://example.com]", entity_ranges: [{ offset: 1, length: 19, key: "1" }] },
+    ]);
+    expect(contentState.entities.map(({ value }) => value.data.url)).toEqual([
+      "https://example.com",
+      "https://example.com",
+    ]);
+  });
+
+  test("keeps balanced parentheses inside a URL instead of treating them as trailing punctuation", () => {
+    const contentState = convert("See https://en.wikipedia.org/wiki/Example_(disambiguation) page");
+
+    expect(contentState.blocks[0]?.entity_ranges).toEqual([{ offset: 4, length: 54, key: "0" }]);
+    expect(contentState.entities).toEqual([
+      {
+        key: "0",
+        value: {
+          type: "link",
+          mutability: "mutable",
+          data: { url: "https://en.wikipedia.org/wiki/Example_(disambiguation)" },
+        },
+      },
+    ]);
+  });
+
+  test("leaves existing markdown links unchanged and does not double-link them", () => {
+    expect(convert("[Finch](https://example.com) https://example.com")).toEqual({
+      blocks: [
+        {
+          key: "c",
+          text: "Finch https://example.com",
+          type: "unstyled",
+          data: {},
+          entity_ranges: [
+            { offset: 0, length: 5, key: "0" },
+            { offset: 6, length: 19, key: "1" },
+          ],
+          inline_style_ranges: [],
+        },
+      ],
+      entities: [
+        { key: "0", value: { type: "link", mutability: "mutable", data: { url: "https://example.com" } } },
+        { key: "1", value: { type: "link", mutability: "mutable", data: { url: "https://example.com" } } },
+      ],
+    });
+  });
+
+  test("preserves bare URLs as plain text inside inline code", () => {
+    expect(convert("Use `https://example.com` in code.")).toEqual({
+      blocks: [
+        {
+          key: "a",
+          text: "Use https://example.com in code.",
+          type: "unstyled",
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
+        },
+      ],
+      entities: [],
+    });
+  });
+
+  test("preserves bare URLs as plain text inside fenced code blocks", () => {
+    expect(convert("```\nSee https://example.com for details\n```")).toEqual({
+      blocks: [
+        {
+          key: "a",
+          text: "See https://example.com for details",
+          type: "unstyled",
+          data: {},
+          entity_ranges: [],
+          inline_style_ranges: [],
+        },
+      ],
+      entities: [],
+    });
+  });
+
   test("degrades unsupported markdown without throwing", () => {
     expect(convert("![alt text](image.png)\n\n```ts\nconst value = 1;\n```")).toEqual({
       blocks: [
