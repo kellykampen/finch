@@ -381,3 +381,6 @@ which finch        # confirm you're not shadowing a Homebrew install with a
 - If `finch --version` and `finch schema` both look current and the problem persists,
   it's a real bug — file it with the exact command, `finch --version` output, and
   whether you're running the Homebrew or repo-local binary.
+- **Before any release or live-E2E gate:** don't just spot-check `--version` — rebuild
+  from the exact checkout under test and capture provenance evidence first. See
+  `docs/release/e2e-preflight.md` (`bun run preflight`).
