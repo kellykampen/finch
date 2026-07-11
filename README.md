@@ -141,6 +141,10 @@ credential value.
 the no-secret rotation/revocation runbook — revoke at the X Developer Portal, re-auth via
 `finch auth`, verify with the safe commands below.
 
+**Want to reset or log out?** See `docs/runbooks/auth-reset-logout.md` — reset is just
+re-running `finch auth`; logout is safely removing `~/.finch/config` (no dedicated
+command exists, and that doc explains why the existing commands already cover it).
+
 ## Usage
 
 Every command below works as-is; add `--json` to any of them for machine output.
