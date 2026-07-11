@@ -133,7 +133,15 @@ behind. Re-running `finch auth` overwrites the stored credentials — there is n
 update via the wizard (use `finch config set` for non-secret fields; see below).
 
 Token refresh is transparent while the refresh token remains valid. Finch stores
-`expiresAt` and refreshes the access token automatically before API calls.
+`expiresAt` and refreshes the access token automatically before API calls — and,
+if X rejects an access token *before* its stored expiry, it refreshes once
+reactively and retries rather than forcing a re-login. Because X's refresh
+tokens are single-use (each refresh rotates them), Finch serializes refreshes
+across concurrent commands / MCP tool calls with a short-lived advisory lock
+file at `~/.finch/config.refresh.lock`: exactly one caller spends the old token,
+and the others re-read and reuse the freshly rotated credential. The lock file
+holds only a timestamp — never any secret. Re-authentication is only required
+once the refresh token itself expires or is revoked.
 
 **Hard cutover:** if you have an old (pre-OAuth 2.0) `~/.finch/config` from before this
 migration, Finch will refuse to read it and report a clear error telling you to run

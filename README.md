@@ -120,9 +120,12 @@ Secrets are never echoed back: `finch config get auth.accessToken` masks all but
 last 4 characters, and no Finch error output ever includes a raw token.
 
 Token refresh is transparent. While you use Finch, access tokens are refreshed
-automatically using the stored refresh token; no user action is needed. If a refresh
-token expires or is revoked, Finch reports an auth error telling you to re-run
-`finch auth`.
+automatically using the stored refresh token; no user action is needed. Refreshes
+are safe under concurrent use — if several commands (or MCP tool calls) run at
+once when the token expires, Finch coordinates them so only one refresh happens
+and the rest reuse the new token, so you are **not** bounced back to a login
+prompt every couple of hours. If a refresh token actually expires or is revoked,
+Finch reports an auth error telling you to re-run `finch auth`.
 
 **Hard cutover:** if you have an old (pre-OAuth 2.0) `~/.finch/config` from before
 this migration, Finch will refuse to read it and report a clear error telling you to
