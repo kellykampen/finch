@@ -133,28 +133,29 @@ DRYRUN_OK='const r=JSON.parse(process.argv[1]); if(!r.ok) throw new Error("ok=fa
 AUTH_ERR='const r=JSON.parse(process.argv[1]); if(r.ok) throw new Error("expected ok=false"); if(r.error.code!=="AUTH_ERROR") throw new Error("expected AUTH_ERROR, got "+r.error.code);'
 USAGE_ERR='const r=JSON.parse(process.argv[1]); if(r.ok) throw new Error("expected ok=false"); if(r.error.code!=="USAGE_ERROR") throw new Error("expected USAGE_ERROR, got "+r.error.code);'
 
-echo "--- FIN-46 surface rehearsal (dry-run: parses + validates, no network) ---"
+echo "--- 1. Dry-run cases (parse + validate FIN-46 surfaces, no network) ---"
 
-# 1. Image post with alt text.
+# Case 1: image post with alt text.
 check "image post + alt (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); const w=r.data.wouldSend; if(!w.media.includes("photo.png")) throw new Error("media missing: "+JSON.stringify(w)); if(!w.alt.includes("screenshot of the finch CLI")) throw new Error("alt missing: "+JSON.stringify(w));' \
   -- post "Ship it" --media photo.png --alt "screenshot of the finch CLI" --dry-run --json
 
-# 2. GIF/video upload path (classification is by extension; no file read).
+# Case 2: GIF/video upload path (classification by extension; no file read).
 check "video (.mp4) post (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(!r.data.wouldSend.media.includes("demo.mp4")) throw new Error("mp4 missing");' \
   -- post "demo clip" --media demo.mp4 --dry-run --json
 check "gif (.gif) post (dry-run)" 0 "$DRYRUN_OK" \
   -- post "loop" --media loop.gif --dry-run --json
 
-# 5. Delete / cleanup command planning (dry-run, from a URL).
+# Case 3: delete / cleanup command planning (dry-run, from a URL).
 check "delete from URL (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(r.data.wouldSend.tweet_id!=="1755555555555555555") throw new Error("tweet_id: "+JSON.stringify(r.data));' \
   -- delete "https://x.com/example/status/1755555555555555555" --dry-run --json
 
 echo ""
-echo "--- FIN-46 article path (dry-run, no network) ---"
+echo "--- 2. Article-path cases (dry-run, no network) ---"
 
+# Case 4: article draft / publish / post (dry-run) — output varies by subcommand.
 check "article draft (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); if(r.data.wouldSend.title!=="Launch Notes") throw new Error("title missing");' \
   -- article draft "Launch Notes" ./notes.md --dry-run --json
@@ -165,21 +166,21 @@ check "article post (dry-run)" 0 \
   'const r=JSON.parse(process.argv[1]); if(r.data.dryRun!==true) throw new Error("not dryRun"); if(r.data.wouldSend.title!=="Launch Notes") throw new Error("title missing");' \
   -- article post ./notes.md --title "Launch Notes" --dry-run --json
 
-# Article arg parsing still rejects a missing arg as a usage error.
+# Case 5: article arg parsing still rejects a missing arg as a usage error.
 check "article draft missing args (usage)" 2 "$USAGE_ERR" \
   -- article draft --json
 
-# Regression (FIN-70): `--title` must not silently swallow `--dry-run` as its
-# value — strict flag-collision rejection catches this at parse time, before
-# it can fall through to a live AUTH_ERROR.
+# Case 6 (FIN-70 regression): `--title` must not silently swallow `--dry-run`
+# as its value — strict flag-collision rejection catches this at parse time,
+# before it can fall through to a live AUTH_ERROR.
 check "article post --title swallowing --dry-run rejected (usage)" 2 \
   'const r=JSON.parse(process.argv[1]); if(r.ok) throw new Error("expected ok=false"); if(r.error.code!=="USAGE_ERROR") throw new Error("expected USAGE_ERROR, got "+r.error.code); if(!String(r.error.message).includes("Missing value")) throw new Error("expected message to include Missing value: "+r.error.message);' \
   -- article post ./notes.md --title --dry-run --json
 
 echo ""
-echo "--- Live-write guard: mutating commands without --dry-run and no creds ---"
+echo "--- 3. Live-write-guard cases (mutating commands, no --dry-run, no creds) ---"
 
-# These prove the gate fails safely before any live post/delete/upload.
+# Case 7: these prove the gate fails safely before any live post/delete/upload.
 check "post (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
   -- post "would be a live post" --json
 check "delete (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
@@ -194,8 +195,9 @@ check "article post (no dry-run, no creds) blocked" 3 "$AUTH_ERR" \
   -- article post ./notes.md --title "Launch Notes" --json
 
 echo ""
-echo "--- Media/alt validation (parse-level, still no network) ---"
+echo "--- 4. Validation cases (parse-level USAGE_ERROR rejections, still no network) ---"
 
+# Case 8: media/alt validation — too many images, image+video mix, more alts than images.
 check "too many images rejected" 2 "$USAGE_ERR" \
   -- post "x" --media a.png --media b.png --media c.png --media d.png --media e.png --dry-run --json
 check "image + video mix rejected" 2 "$USAGE_ERR" \
@@ -204,9 +206,9 @@ check "more alts than images rejected" 2 "$USAGE_ERR" \
   -- post "x" --media a.png --alt "one" --alt "two" --dry-run --json
 
 echo ""
-echo "--- File-thread path (dry-run over a --file, no network) ---"
+echo "--- 5. File-thread cases (dry-run over a --file, no network) ---"
 
-# 4. File-driven thread: needs a real file inside the sandbox HOME.
+# Case 9: file-driven thread — needs a real file inside the sandbox HOME.
 check_file_thread() {
   TOTAL=$((TOTAL + 1))
   local sandbox rc out

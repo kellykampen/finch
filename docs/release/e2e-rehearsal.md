@@ -35,6 +35,13 @@ Plus guard cases that prove the gate is safe:
 - **Media/alt validation** — too many images, image+video mix, and more alts than images are
   rejected as `USAGE_ERROR` (exit 2) at parse time.
 
+The gate prints its cases in five sequentially numbered groups, in this order, so operator
+output is easy to scan: **1. Dry-run** (image/video/gif/delete surfaces), **2. Article-path**
+(article draft/publish/post dry-run plus arg-validation guards), **3. Live-write-guard**
+(mutating commands with no `--dry-run` and no creds fail with `AUTH_ERROR`), **4. Validation**
+(parse-level `USAGE_ERROR` rejections), and **5. File-thread** (`--file` dry-run). Each `PASS:`
+line falls under the numbered group header it belongs to.
+
 ## How it stays offline (by construction)
 
 - Every invocation runs under a throwaway sandbox `HOME` (`mktemp -d`), so the real
