@@ -344,7 +344,11 @@ describe("runAuth", () => {
     await runAuth({
       deps: oauth2AuthDeps({
         readOAuth2Config: () => {
-          throw new FinchError("AUTH_ERROR", "Finch now uses OAuth 2.0 — run `finch auth`", null);
+          throw new FinchError(
+            "AUTH_ERROR",
+            "Detected a legacy OAuth 1.0a config at /home/x/.finch/config. Finch now uses OAuth 2.0 and cannot migrate it automatically — run `finch auth` to re-authenticate.",
+            { reason: "legacy_oauth1_config", migration: "manual" },
+          );
         },
         promptClientId: async () => "prompted-client-id",
         createTransport: () => transport,
