@@ -16,13 +16,35 @@ export interface ThreadDryRunResult {
   wouldSend: Array<{ text: string; media: string[]; alt: (string | undefined)[] }>;
 }
 
+export interface ThreadHelpResult {
+  help: true;
+  text: string;
+}
+
 export interface ThreadDeps {
   getTransport?: () => XTransport;
   writeStatus?: (message: string) => void;
 }
 
+const THREAD_USAGE = `Usage: finch thread [flags] [<text1> <text2> ...]
+
+Flags:
+  --dry-run            Validate and show what would be posted without calling the X API
+  --file <path>        Read posts from a file, split on blank lines (or --delimiter)
+  --delimiter <str>     Split --file content on this literal string instead of blank lines
+  --continue <id|url>  Reply to an existing post/thread instead of starting a new one
+  --number             Prefix each post with "i/n "
+  --media <n>:<path>   Attach media to the tweet at index n (0-based); repeatable
+  --alt <n>:<text>     Alt text for the preceding --media at index n
+  --help, -h           Show this help message
+
+Text may be supplied as repeated positional arguments or via --file.
+Use -- before the text to pass literal values starting with "-", e.g.
+  finch thread -- "-1 isn't a bad take" "-2 another one"`;
+
 interface ParsedThreadArgs {
   values: Record<string, string>;
+  help: boolean;
   dryRun: boolean;
   number: boolean;
   mediaByIndex: Map<number, { media: string[]; alt: (string | undefined)[] }>;
@@ -40,15 +62,25 @@ interface ParsedThreadArgs {
  * Per-tweet media can be attached with `--media <n>:<path>` (repeatable), where
  * `<n>` is the 0-based index into the resolved texts array. `--alt <n>:<text>`
  * attaches alt text to the most recent `--media` at the same index.
+ *
+ * `--help`/`-h` prints usage and exits without touching the transport/auth
+ * layer. Unknown flags before a `--` terminator are rejected rather than
+ * posted as thread text; put a `--` before any literal text that begins
+ * with `-`.
  */
 export async function runThread(
   argv: string[],
   deps: ThreadDeps = {},
-): Promise<{ data: ThreadResult | ThreadDryRunResult; human: string }> {
+): Promise<{ data: ThreadResult | ThreadDryRunResult | ThreadHelpResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const writeStatus = deps.writeStatus ?? ((message: string) => console.error(message));
 
-  const { values, dryRun, number, mediaByIndex, positionals } = parseThreadArgs(argv);
+  const { values, help, dryRun, number, mediaByIndex, positionals } = parseThreadArgs(argv);
+
+  if (help) {
+    return { data: { help: true, text: THREAD_USAGE }, human: THREAD_USAGE };
+  }
+
   const texts = resolveTexts(positionals, values);
   if (texts.length === 0) {
     throw new FinchError("USAGE_ERROR", "finch thread requires at least one post (positional args or --file)");
@@ -111,18 +143,36 @@ export async function runThread(
   return { data: { ids, count: ids.length }, human: `Posted a thread of ${ids.length} posts` };
 }
 
+/**
+ * Mirrors the dispatch-args pattern used for `finch post`: recognized flags
+ * (`--dry-run`, `--number`, `--help`, `-h`, `--file`, `--delimiter`,
+ * `--continue`, `--media`, `--alt`) are only parsed in the region before a
+ * `--` terminator; everything after `--` is literal thread text and is never
+ * reinterpreted as a flag. Unknown `-` prefixed tokens before `--` are
+ * rejected instead of being silently posted as thread text.
+ */
 function parseThreadArgs(argv: string[]): ParsedThreadArgs {
-  const { values, bools, positionals } = parseArgs(argv, {
+  const terminatorIndex = argv.indexOf("--");
+  const flagRegion = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
+  const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
+
+  const { values, bools, positionals } = parseArgs(flagRegion, {
     valueFlags: ["--file", "--delimiter", "--continue", "--media", "--alt"],
-    boolFlags: ["--dry-run", "--number"],
+    boolFlags: ["--dry-run", "--number", "--help", "-h"],
   });
+
+  const unknownFlag = positionals.find((p) => p.startsWith("-"));
+  if (unknownFlag !== undefined) {
+    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
+  }
 
   return {
     values,
+    help: Boolean(bools["--help"] || bools["-h"]),
     dryRun: Boolean(bools["--dry-run"]),
     number: Boolean(bools["--number"]),
     mediaByIndex: collectThreadMediaWithAlt(argv),
-    positionals,
+    positionals: [...positionals, ...literalRegion],
   };
 }
 
