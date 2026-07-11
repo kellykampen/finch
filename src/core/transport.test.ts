@@ -640,10 +640,32 @@ describe("ByokTransport.setMediaAltText", () => {
 
     await transport.setMediaAltText("media-123", "A useful description");
 
+    // X's v2 POST /2/media/metadata requires the media `id` at the top level and
+    // nests alt text under `metadata.alt_text.text`. The previous shape
+    // (`mediaId` + top-level `altText`) omitted the required `id`, so X dropped
+    // the alt text (FIN-66). Asserting the exact body guards that regression.
     expect(capturedBody).toEqual({
-      mediaId: "media-123",
-      altText: { text: "A useful description" },
+      id: "media-123",
+      metadata: { alt_text: { text: "A useful description" } },
     });
+  });
+
+  test("includes the required media id so X can attach the metadata (FIN-66 regression)", async () => {
+    let capturedBody: { id?: unknown; metadata?: unknown } | undefined;
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, {
+      ...unusedMediaClient,
+      createMetadata: async (options) => {
+        capturedBody = options.body;
+        return {};
+      },
+    });
+
+    await transport.setMediaAltText("media-456", "Another description");
+
+    expect(capturedBody?.id).toBe("media-456");
+    expect(capturedBody).not.toHaveProperty("mediaId");
+    expect(capturedBody).not.toHaveProperty("altText");
+    expect(capturedBody?.metadata).toEqual({ alt_text: { text: "Another description" } });
   });
 
   test("throws CLIENT_ERROR when the metadata response has errors", async () => {
