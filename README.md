@@ -386,4 +386,7 @@ which finch        # confirm you're not shadowing a Homebrew install with a
   whether you're running the Homebrew or repo-local binary.
 - **Before any release or live-E2E gate:** don't just spot-check `--version` — rebuild
   from the exact checkout under test and capture provenance evidence first. See
-  `docs/release/e2e-preflight.md` (`bun run preflight`).
+  `docs/release/e2e-preflight.md` (`bun run preflight`). Then dry-rehearse the FIN-46
+  write/media/article/thread/delete surfaces offline with `bun run rehearse` — a no-live,
+  no-credentials gate that proves the commands parse, validate, and fail safely before any
+  network call. See `docs/release/e2e-rehearsal.md`.
