@@ -79,6 +79,7 @@ export async function runArticleDraft(
   const { values, bools, positionals } = parseArgs(flagRegion, {
     valueFlags: ["--cover"],
     boolFlags: ["--dry-run"],
+    strict: true,
   });
 
   const unknownFlag = positionals.find((p) => p.startsWith("-"));
@@ -169,6 +170,7 @@ export async function runArticlePost(
   const { values, bools, positionals } = parseArgs(flagRegion, {
     valueFlags: ["--title", "--cover"],
     boolFlags: ["--dry-run"],
+    strict: true,
   });
 
   const unknownFlag = positionals.find((p) => p.startsWith("-"));

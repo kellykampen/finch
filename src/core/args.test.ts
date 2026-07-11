@@ -23,8 +23,27 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--file"], { valueFlags: ["--file"] })).toThrow(FinchError);
   });
 
-  test("throws USAGE_ERROR when the next token starts with '-' (another flag)", () => {
-    expect(() => parseArgs(["--file", "--dry-run"], { valueFlags: ["--file"], boolFlags: ["--dry-run"] })).toThrow(FinchError);
+  test("without strict, a value flag consumes a literal value that looks like a flag (e.g. MCP-bridged input)", () => {
+    const result = parseArgs(["--file", "--dry-run"], { valueFlags: ["--file"], boolFlags: ["--dry-run"] });
+    expect(result.values["--file"]).toBe("--dry-run");
+    expect(result.bools["--dry-run"]).toBeUndefined();
+  });
+
+  test("with strict, throws USAGE_ERROR when the next token is a registered bool flag", () => {
+    expect(() =>
+      parseArgs(["--file", "--dry-run"], { valueFlags: ["--file"], boolFlags: ["--dry-run"], strict: true }),
+    ).toThrow(FinchError);
+  });
+
+  test("with strict, throws USAGE_ERROR when the next token is a registered value flag", () => {
+    expect(() => parseArgs(["--title", "--cover"], { valueFlags: ["--title", "--cover"], strict: true })).toThrow(
+      FinchError,
+    );
+  });
+
+  test("with strict, a value that merely starts with '-' but isn't a registered flag is still accepted", () => {
+    const result = parseArgs(["--title", "-unregistered"], { valueFlags: ["--title"], strict: true });
+    expect(result.values["--title"]).toBe("-unregistered");
   });
 
   test("'--' forces everything after it to be positional, even a token matching a bool flag", () => {
