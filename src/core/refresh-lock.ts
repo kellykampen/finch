@@ -1,11 +1,12 @@
 import { closeSync, openSync, rmSync, statSync, writeSync } from "node:fs";
+import { FinchError } from "./errors";
 
 export interface FileLockOptions {
   /** Break a lock whose file is older than this many ms (crashed holder). */
   staleMs?: number;
   /** Poll interval while waiting for the lock. */
   retryMs?: number;
-  /** Give up waiting after this long and proceed anyway (avoid deadlocking a user command). */
+  /** Give up waiting after this long and fail closed (never refresh without the lock). */
   timeoutMs?: number;
   nowFn?: () => number;
   sleepFn?: (ms: number) => Promise<void>;
@@ -29,9 +30,9 @@ function defaultSleep(ms: number): Promise<void> {
  *
  * The wait loop is fully async (never a busy spin) so the lock holder's own
  * awaited work keeps making progress on Bun's single-threaded event loop. A
- * crashed holder's stale lock is broken after `staleMs`, and a caller that
- * waits past `timeoutMs` proceeds without the lock rather than hanging a
- * user-facing command forever.
+ * crashed holder's stale lock is broken after `staleMs`. A caller that waits
+ * past `timeoutMs` fails closed: running the callback without the lock could
+ * spend the same rotating refresh token twice and invalidate the session.
  */
 export async function withFileLock<T>(
   lockPath: string,
@@ -70,8 +71,10 @@ export async function withFileLock<T>(
         continue;
       }
       if (now() - start > timeoutMs) {
-        // Proceed without the lock rather than block the command indefinitely.
-        break;
+        throw new FinchError(
+          "NETWORK_ERROR",
+          `Timed out waiting for the credential refresh lock at ${lockPath}; retry the command.`,
+        );
       }
       await sleep(retryMs);
     }

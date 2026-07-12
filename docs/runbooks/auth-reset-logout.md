@@ -58,12 +58,13 @@ rm ~/.finch/config  # or the path printed above, if it resolves elsewhere (see b
 finch auth status   # confirms {configured: false} — the clean "logged out" state
 ```
 
-Use `finch config path` first rather than assuming `~/.finch/config` — the path is
-resolved from `$HOME` at runtime (`configPath()` in `src/core/config.ts` reads
-`process.env.HOME`), so under a non-default or sandboxed `$HOME` it points elsewhere.
-Confirming the path avoids removing the wrong file. Never `cat` the file first "to
-check" — that would print live tokens for no reason; the path alone is enough to confirm
-you're targeting the right location.
+Use `finch config path` first rather than assuming `~/.finch/config`. An absolute
+`FINCH_CONFIG_PATH` takes precedence; otherwise the path is resolved from `$HOME` at
+runtime. Give every credential-using local process the same override when their `HOME`
+values may differ—X refresh tokens can rotate, and independent writable copies do not
+share Finch's adjacent refresh lock. Confirming the path avoids removing the wrong file.
+Never `cat` the file first "to check"—that would print live tokens for no reason; the
+path alone is enough to confirm you're targeting the right location.
 
 ### Destructive-behavior warning
 

@@ -68,4 +68,27 @@ describe("withFileLock", () => {
     );
     expect(ran).toBe(true);
   });
+
+  test("fails closed on timeout without running the refresh callback unlocked", async () => {
+    writeFileSync(lockPath, "held");
+    let callbackRan = false;
+    let now = 0;
+
+    await expect(
+      withFileLock(
+        lockPath,
+        async () => {
+          callbackRan = true;
+        },
+        {
+          staleMs: Number.MAX_SAFE_INTEGER,
+          retryMs: 1,
+          timeoutMs: 5,
+          nowFn: () => now++,
+          sleepFn: async () => {},
+        },
+      ),
+    ).rejects.toThrow("Timed out waiting for the credential refresh lock");
+    expect(callbackRan).toBe(false);
+  });
 });

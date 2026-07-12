@@ -78,9 +78,11 @@ duplicated between the two surfaces, and no direct X API imports outside `OAuth2
 unambiguous reference for that path; the "Auth / config" row in the v1 command spec below is
 the same command, described in-line with the rest of the CLI surface.
 
-- **File path (exact, fixed, no override):** `~/.finch/config` (i.e.
-  `$HOME/.finch/config` — resolved via the OS home dir, not `$PWD`). No project-local config
-  file in v1 — one account, one machine, one file.
+- **File path:** `~/.finch/config` by default (i.e. `$HOME/.finch/config`, never `$PWD`).
+  `FINCH_CONFIG_PATH` may select one absolute canonical path for execution contexts with
+  divergent `HOME` values. Every credential writer must use the same path because the adjacent
+  refresh lock and rotating refresh-token state are store-scoped. No project-local config file
+  in v1 — one account, one machine, one writable credential store.
 - **Permissions:** created at `0600` by `finch auth`; every subsequent read/write by Finch
   re-checks and re-applies `0600` in case another process touched it.
 - **Format:** JSON.
