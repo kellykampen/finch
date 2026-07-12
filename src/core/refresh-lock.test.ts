@@ -68,4 +68,49 @@ describe("withFileLock", () => {
     );
     expect(ran).toBe(true);
   });
+
+  test("fails closed (does not spin) when statSync throws a non-ENOENT error", async () => {
+    writeFileSync(lockPath, "held");
+    let statCalls = 0;
+    const eaccesErr = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+
+    await expect(
+      withFileLock(lockPath, async () => {}, {
+        retryMs: 1,
+        timeoutMs: 5,
+        nowFn: () => 0,
+        sleepFn: async () => {},
+        statFn: () => {
+          statCalls++;
+          throw eaccesErr;
+        },
+      }),
+    ).rejects.toThrow(/refresh lock/i);
+    expect(statCalls).toBe(1);
+  });
+
+  test("fails closed on timeout without running the refresh callback unlocked", async () => {
+    writeFileSync(lockPath, "held");
+    let callbackRan = false;
+    let now = 0;
+
+    await expect(
+      withFileLock(
+        lockPath,
+        async () => {
+          callbackRan = true;
+        },
+        {
+          staleMs: Number.MAX_SAFE_INTEGER,
+          retryMs: 1,
+          timeoutMs: 5,
+          nowFn: () => now++,
+          sleepFn: async () => {},
+        },
+      ),
+    ).rejects.toThrow("Timed out waiting for the credential refresh lock");
+    expect(callbackRan).toBe(false);
+  });
 });

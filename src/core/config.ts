@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { FinchError } from "./errors";
 
 export const CONFIG_MODE = 0o600;
 
@@ -11,6 +12,13 @@ function resolveHomeDir(): string {
 }
 
 export function configPath(): string {
+  const explicitPath = process.env.FINCH_CONFIG_PATH?.trim();
+  if (explicitPath) {
+    if (!isAbsolute(explicitPath)) {
+      throw new FinchError("USAGE_ERROR", "FINCH_CONFIG_PATH must be an absolute path");
+    }
+    return explicitPath;
+  }
   return join(resolveHomeDir(), ".finch", "config");
 }
 

@@ -106,10 +106,25 @@ The flow requests the full scope superset Finch needs: `tweet.read`, `tweet.writ
 `media.write`, and `offline.access`.
 
 Before anything is saved, Finch makes **one live validation call** to X. Only if that
-succeeds does it write `~/.finch/config` at `0600`. A denied or misconfigured Client
-ID / redirect URI fails loudly (exit code 3) instead of leaving a broken config file
-behind. Re-running `finch auth` overwrites the stored credentials — there's no partial
-update via the wizard (use `finch config set` for non-secret fields; see below).
+succeeds does it write the config at `0600`. By default that is `~/.finch/config`. A
+denied or misconfigured Client ID / redirect URI fails loudly (exit code 3) instead of
+leaving a broken config file behind. Re-running `finch auth` overwrites the stored
+credentials — there's no partial update via the wizard (use `finch config set` for
+non-secret fields; see below).
+
+If Finch is invoked by local processes that may have different `HOME` values, give all
+credential-using processes one absolute canonical path:
+
+```bash
+export FINCH_CONFIG_PATH="$HOME/.finch/config"
+finch config path --json  # safe: prints path metadata only, never config contents
+```
+
+`FINCH_CONFIG_PATH` must be absolute. It controls both the credential file and its
+adjacent refresh lock. Do not pass it into CI, E2B, or no-live smokes that intentionally
+use isolated credentials. X refresh tokens can rotate when used, so copying one config
+into multiple independently writable paths is unsafe: each writer must share the same
+latest credential and lock.
 
 ```bash
 finch auth status   # {configured, valid, username} — no wizard, just a status check
@@ -123,9 +138,10 @@ Token refresh is transparent. While you use Finch, access tokens are refreshed
 automatically using the stored refresh token; no user action is needed. Refreshes
 are safe under concurrent use — if several commands (or MCP tool calls) run at
 once when the token expires, Finch coordinates them so only one refresh happens
-and the rest reuse the new token, so you are **not** bounced back to a login
-prompt every couple of hours. If a refresh token actually expires or is revoked,
-Finch reports an auth error telling you to re-run `finch auth`.
+and the rest reuse the new token. A caller that times out waiting for that lock
+fails closed instead of refreshing unlocked. You are therefore **not** bounced
+back to a login prompt every couple of hours. If a refresh token actually expires
+or is revoked, Finch reports an auth error telling you to re-run `finch auth`.
 
 **Hard cutover:** if you have an old (pre-OAuth 2.0) `~/.finch/config` from before
 this migration, Finch refuses to read it and reports a clear, actionable error — it
