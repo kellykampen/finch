@@ -189,10 +189,16 @@ export HOME="$(mktemp -d)"   # sandbox; real ~/.finch/config is never touched
    for i in $(seq 1 10); do finch whoami --json & done; wait
    ```
 
-   All 10 must exit 0; none may exit 3. This validates the `~/.finch/config.refresh.lock`
-   serialization — exactly one caller spends the old refresh token and the rest re-read and
-   reuse the freshly rotated credential, so a concurrent race never strands a command into a
-   forced re-login.
+   Under normal contention all 10 exit 0: exactly one caller spends the old refresh token and
+   the rest wait on `~/.finch/config.refresh.lock`, then re-read and reuse the freshly rotated
+   credential. Under heavier contention (a slow refresh keeps the lock held past a waiter's
+   `timeoutMs`), a waiter may instead fail closed with a retryable `NETWORK_ERROR` (exit 6) rather
+   than run the refresh unlocked — that is expected, acceptable behavior, not a failure of this
+   check, and the same command should succeed with exit 0 if retried once the in-flight refresh
+   completes. **None may exit 3** (`AUTH_ERROR`): that would mean the race actually corrupted or
+   invalidated the credential and forced a re-login, which is the regression this check exists to
+   catch. Re-run any exit-6 case once to confirm it clears; a repeated exit 3 on retry is a real
+   failure.
 7. **Out of scope for a pass.** Re-authentication *is* expected once the refresh token itself
    expires or is revoked — this procedure deliberately does not run that long, and a re-login
    prompt only after the refresh-token lifetime is correct behavior, not a failure.

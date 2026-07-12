@@ -2,7 +2,13 @@ import { closeSync, openSync, rmSync, statSync, writeSync } from "node:fs";
 import { FinchError } from "./errors";
 
 export interface FileLockOptions {
-  /** Break a lock whose file is older than this many ms (crashed holder). */
+  /**
+   * Break a lock whose file is older than this many ms. This is an mtime-age
+   * heuristic, not a liveness check: it cannot distinguish a crashed holder
+   * from a holder still legitimately mid-refresh past `staleMs`. Set it
+   * comfortably above the slowest expected refresh so a live holder is never
+   * mistaken for a crashed one.
+   */
   staleMs?: number;
   /** Poll interval while waiting for the lock. */
   retryMs?: number;
@@ -10,6 +16,7 @@ export interface FileLockOptions {
   timeoutMs?: number;
   nowFn?: () => number;
   sleepFn?: (ms: number) => Promise<void>;
+  statFn?: (path: string) => { mtimeMs: number };
 }
 
 const DEFAULT_STALE_MS = 30_000;
@@ -30,9 +37,16 @@ function defaultSleep(ms: number): Promise<void> {
  *
  * The wait loop is fully async (never a busy spin) so the lock holder's own
  * awaited work keeps making progress on Bun's single-threaded event loop. A
- * crashed holder's stale lock is broken after `staleMs`. A caller that waits
- * past `timeoutMs` fails closed: running the callback without the lock could
- * spend the same rotating refresh token twice and invalidate the session.
+ * lock whose file is older than `staleMs` is broken so a crashed holder can't
+ * strand every other caller forever — but `staleMs` is an mtime-age heuristic,
+ * not proof of death: a holder whose refresh is still legitimately in flight
+ * past `staleMs` looks identical to a crashed one, and another caller can seize
+ * the lock and double-spend the rotating refresh token in that window. Callers
+ * must set `staleMs` well above the slowest expected refresh to keep that
+ * window practically unreachable; this function cannot guarantee it can't
+ * happen. A caller that waits past `timeoutMs` (without ever observing a stale
+ * lock) fails closed: running the callback without the lock could spend the
+ * same rotating refresh token twice and invalidate the session.
  */
 export async function withFileLock<T>(
   lockPath: string,
@@ -44,6 +58,7 @@ export async function withFileLock<T>(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const now = options.nowFn ?? Date.now;
   const sleep = options.sleepFn ?? defaultSleep;
+  const stat = options.statFn ?? statSync;
 
   const start = now();
   let acquired = false;
@@ -60,14 +75,25 @@ export async function withFileLock<T>(
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       // Someone holds the lock. Break it if the holder appears to have crashed.
+      let mtimeMs: number;
       try {
-        const age = now() - statSync(lockPath).mtimeMs;
-        if (age > staleMs) {
-          rmSync(lockPath, { force: true });
+        mtimeMs = stat(lockPath).mtimeMs;
+      } catch (statErr) {
+        if ((statErr as NodeJS.ErrnoException).code === "ENOENT") {
+          // Lock vanished between openSync and statSync — retry immediately.
           continue;
         }
-      } catch {
-        // Lock vanished between openSync and statSync — retry immediately.
+        // An unexpected stat failure (e.g. EACCES/EIO) means we cannot tell
+        // whether the lock is stale. Fail closed immediately rather than
+        // spin retrying a stat that will keep failing the same way.
+        throw new FinchError(
+          "NETWORK_ERROR",
+          `Could not inspect the credential refresh lock at ${lockPath}; retry the command.`,
+        );
+      }
+      const age = now() - mtimeMs;
+      if (age > staleMs) {
+        rmSync(lockPath, { force: true });
         continue;
       }
       if (now() - start > timeoutMs) {
