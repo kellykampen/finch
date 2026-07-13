@@ -210,6 +210,23 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(exitCode).toBe(2);
   });
 
+  test("-v works as a global-flag alias for `finch version`", () => {
+    const { exitCode, stdout } = runCli(["-v"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope).toEqual({ ok: true, data: { version: pkg.version } });
+  });
+
+  test("a literal '-v' positional after the `--` terminator is NOT hijacked into version output", () => {
+    const { exitCode, stdout } = runCli(["like", "--", "-v"]);
+
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(exitCode).toBe(2);
+  });
+
   test("a literal '--describe' positional after the `--` terminator is NOT hijacked into schema output", () => {
     // Mirrors the M3 flag-injection protection parseArgs already gives every
     // command: free-text/positional arguments after `--` must be taken

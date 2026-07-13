@@ -54,6 +54,13 @@ describe("COMMAND_SCHEMAS", () => {
     }
   });
 
+  test("the version entry advertises the -v short alias in its machine-readable surface", () => {
+    const version = COMMAND_SCHEMAS.find((c) => c.name === "version");
+    expect(version).toBeDefined();
+    expect(version?.flags).toContain("-v");
+    expect(version?.description).toContain("-v");
+  });
+
   test("never includes secret auth field values", () => {
     const serialized = JSON.stringify(COMMAND_SCHEMAS);
     expect(serialized).not.toMatch(/(clientId|accessToken|refreshToken)":\s*"(?!string)/);

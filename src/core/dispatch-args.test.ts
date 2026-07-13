@@ -49,6 +49,16 @@ describe("resolveDispatchArgs", () => {
     expect(result.args).toEqual(["like", "--", "--version"]);
   });
 
+  test("-v before a terminator is recognized as the global version alias", () => {
+    const result = resolveDispatchArgs(["-v"], true);
+    expect(result.args).toEqual(["version"]);
+  });
+
+  test("a literal '-v' positional after `--` is NOT hijacked into the version alias", () => {
+    const result = resolveDispatchArgs(["like", "--", "-v"], true);
+    expect(result.args).toEqual(["like", "--", "-v"]);
+  });
+
   test("--help before a terminator is recognized as the global help alias", () => {
     const result = resolveDispatchArgs(["--help"], true);
     expect(result.args).toEqual(["help"]);

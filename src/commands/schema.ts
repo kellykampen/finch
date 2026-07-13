@@ -273,8 +273,8 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
   {
     name: "version",
     description:
-      "Report the semver of this exact binary — check this (and `finch schema`) before assuming an 'unknown command' error is a bug rather than a stale local build or an out-of-date Homebrew install. Also available as the --version global flag.",
-    flags: ["--json", "--version"],
+      "Report the semver of this exact binary — check this (and `finch schema`) before assuming an 'unknown command' error is a bug rather than a stale local build or an out-of-date Homebrew install. Also available as the --version / -v global flag.",
+    flags: ["--json", "--version", "-v"],
     positionals: [],
     endpoint: "-",
     dataShape: "{ version: string }",
