@@ -28,12 +28,19 @@ import {
 } from "./commands/bookmark";
 import { runConfigGet, runConfigSet, runConfigPath } from "./commands/config";
 import { runSchema } from "./commands/schema";
+import { runHelp } from "./commands/help";
 import { resolveDispatchArgs } from "./core/dispatch-args";
 import { runMcp } from "./mcp/server";
 
 async function dispatch(args: string[]): Promise<{ data: unknown; human: string }> {
   const [cmd, sub] = args;
 
+  // A bare `finch` (no command) prints top-level help and exits 0, rather than
+  // the "Unknown command" usage error — `help`/`--help`/`-h` all route here too
+  // (the flags via resolveDispatchArgs). Help is a successful invocation.
+  if (cmd === undefined || cmd === "help") {
+    return runHelp();
+  }
   if (cmd === "auth" && sub === "status") {
     return runAuthStatus();
   }

@@ -49,6 +49,26 @@ describe("resolveDispatchArgs", () => {
     expect(result.args).toEqual(["like", "--", "--version"]);
   });
 
+  test("--help before a terminator is recognized as the global help alias", () => {
+    const result = resolveDispatchArgs(["--help"], true);
+    expect(result.args).toEqual(["help"]);
+  });
+
+  test("-h before a terminator is recognized as the global help alias", () => {
+    const result = resolveDispatchArgs(["-h"], true);
+    expect(result.args).toEqual(["help"]);
+  });
+
+  test("a literal '--help' positional after `--` is NOT hijacked into the help alias", () => {
+    const result = resolveDispatchArgs(["like", "--", "--help"], true);
+    expect(result.args).toEqual(["like", "--", "--help"]);
+  });
+
+  test("a literal '-h' positional after `--` is NOT hijacked into the help alias", () => {
+    const result = resolveDispatchArgs(["post", "--", "-h"], true);
+    expect(result.args).toEqual(["post", "--", "-h"]);
+  });
+
   test("multiple caller-text values after `--` are all preserved untouched", () => {
     const result = resolveDispatchArgs(["thread", "--", "--json", "--describe", "hello"], true);
     expect(result.args).toEqual(["thread", "--", "--json", "--describe", "hello"]);
