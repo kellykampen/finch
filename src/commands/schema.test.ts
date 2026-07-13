@@ -33,6 +33,7 @@ const ALL_COMMANDS = [
   "config path",
   "schema",
   "version",
+  "help",
 ];
 
 describe("COMMAND_SCHEMAS", () => {

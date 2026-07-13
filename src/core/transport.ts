@@ -1,10 +1,8 @@
 import { Client, ApiError, OAuth2, type OAuth2Token } from "@xdevplatform/xdk";
 import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { FinchError } from "./errors";
-import { configPath } from "./config";
-import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
+import { readOAuth2Config, writeOAuth2Config, withConfigStoreLock } from "./oauth2-config";
 import type { FinchOAuth2Config, OAuth2AuthConfig } from "./oauth2-config";
-import { withFileLock } from "./refresh-lock";
 
 // Refresh the access token this many ms before its stated expiry, absorbing
 // clock skew and request latency around the boundary.
@@ -12,6 +10,15 @@ const EXPIRY_BUFFER_MS = 60_000;
 // Shown when the stored refresh token is missing or X refuses to refresh it —
 // the only remaining recovery is a fresh interactive login.
 const SESSION_EXPIRED_MESSAGE = "Your session has expired — run `finch auth` to log in again.";
+// Shown when a refresh attempt failed without X definitively rejecting the
+// token (network failure, timeout, 5xx, rate limit). The outcome is
+// AMBIGUOUS: X may or may not have processed the refresh before the failure,
+// so this message must advise a retry without guaranteeing the stored
+// credential's state — and must not push the operator straight into a
+// needless interactive re-login (FIN-78).
+const REFRESH_UNCONFIRMED_MESSAGE =
+  "Could not confirm a session refresh with X (network problem or temporary X failure) — retry shortly; " +
+  "if this keeps failing, run `finch auth` to start a fresh session.";
 // The generic credential-rejection message from a 401/403. Reused as the
 // trigger for one reactive refresh+retry (a scope/tier error carries a
 // different, more specific message and must NOT trigger a refresh).
@@ -1245,8 +1252,8 @@ class RefreshingOAuth2Transport implements XTransport {
           : new OAuth2({ clientId: this.config.clientId, redirectUri: OAUTH2_REDIRECT_URI }).refreshToken(
               refreshToken,
             ));
-      } catch {
-        throw new FinchError("AUTH_ERROR", SESSION_EXPIRED_MESSAGE, null);
+      } catch (err) {
+        throw classifyRefreshFailure(err);
       }
 
       const now = this.deps.nowFn();
@@ -1286,15 +1293,66 @@ class RefreshingOAuth2Transport implements XTransport {
   }
 }
 
+// Matches the plain-Error message @xdevplatform/xdk's OAuth2.refreshToken()
+// throws for a non-ok token-endpoint response ("Failed to refresh token:
+// <status>, body: ..."). Pinned by the FIN-78 regression tests so an xdk
+// upgrade that changes this contract fails loudly instead of silently
+// reclassifying refresh failures.
+const XDK_REFRESH_FAILURE_STATUS = /^Failed to refresh token: (\d{3})\b/;
+
+// RFC 6749 §5.2 error codes that mean the token endpoint REJECTED this
+// refresh request outright — the credential (or client) is invalid and no
+// retry can succeed. Matched against the failure's message/body text so the
+// classification survives an XDK error-prefix change as long as X's response
+// body is included (the mocked-fetch regression tests pin the current
+// XDK 0.5.0 contract).
+const OAUTH_TERMINAL_REFRESH_ERROR = /invalid_grant|invalid_client|unauthorized_client|unsupported_grant_type/i;
+
+// 4xx statuses that are retry-oriented rather than "your credential is bad":
+// request timeout, too-early, and rate limiting.
+const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429]);
+
+/**
+ * Decide whether a failed refresh means "the session is gone" (X answered
+ * with an OAuth rejection — only a new interactive login recovers) or the
+ * outcome is ambiguous/transient (network failure, timeout, 5xx, 429 — a
+ * retry may recover, and X may or may not have processed the request).
+ * Terminal means an explicit RFC 6749 error code in the response, or a
+ * non-transient 4xx from the token endpoint. Everything else — including a
+ * response that never arrived — maps to a retryable NETWORK_ERROR whose
+ * message does not overclaim what happened to the stored credential. A
+ * FinchError from an injected refreshFn already carries its own
+ * classification and passes through untouched (FIN-78).
+ */
+function classifyRefreshFailure(err: unknown): FinchError {
+  if (err instanceof FinchError) return err;
+
+  let status: number | null = null;
+  let detail = "";
+  if (err instanceof ApiError) {
+    status = err.status;
+    detail = `${err.message} ${stringifyErrorData(err.data)}`;
+  } else if (err instanceof Error) {
+    detail = err.message;
+    const match = err.message.match(XDK_REFRESH_FAILURE_STATUS);
+    if (match) status = Number(match[1]);
+  }
+
+  if (OAUTH_TERMINAL_REFRESH_ERROR.test(detail)) {
+    return new FinchError("AUTH_ERROR", SESSION_EXPIRED_MESSAGE, null);
+  }
+  if (status !== null && status >= 400 && status < 500 && !TRANSIENT_HTTP_STATUSES.has(status)) {
+    return new FinchError("AUTH_ERROR", SESSION_EXPIRED_MESSAGE, null);
+  }
+  return new FinchError("NETWORK_ERROR", REFRESH_UNCONFIRMED_MESSAGE, null);
+}
+
 function runInline<T>(fn: () => Promise<T>): Promise<T> {
   return fn();
 }
 
-// Lock file sits next to ~/.finch/config; the path is resolved per-call so a
-// test that swaps $HOME between refreshes still locks the right store.
-function runWithConfigLock<T>(fn: () => Promise<T>): Promise<T> {
-  return withFileLock(`${configPath()}.refresh.lock`, fn);
-}
+// The shared store-wide writer lock (see withConfigStoreLock in
+// oauth2-config.ts) — refresh, re-auth, and config set all serialize on it.
 
 export function createRefreshingOAuth2Transport(
   config: OAuth2AuthConfig,
@@ -1310,7 +1368,7 @@ export function createRefreshingOAuth2Transport(
     buildTransportFn: deps?.buildTransportFn ?? createOAuth2Transport,
     nowFn: deps?.nowFn ?? Date.now,
     readConfigFn: deps?.readConfigFn ?? (usingFileStore ? readOAuth2Config : undefined),
-    runExclusive: deps?.runExclusive ?? (usingFileStore ? runWithConfigLock : runInline),
+    runExclusive: deps?.runExclusive ?? (usingFileStore ? withConfigStoreLock : runInline),
   });
 }
 

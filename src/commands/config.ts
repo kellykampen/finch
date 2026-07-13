@@ -1,4 +1,9 @@
-import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
+import {
+  readOAuth2Config,
+  writeOAuth2Config,
+  withConfigStoreLock,
+  type FinchOAuth2Config,
+} from "../core/oauth2-config";
 import { configPath, maskSecret } from "../core/config";
 import { FinchError } from "../core/errors";
 import { parseArgs, resolveCount } from "../core/args";
@@ -7,6 +12,8 @@ export interface ConfigDeps {
   readConfig?: () => FinchOAuth2Config | null;
   writeConfig?: (config: FinchOAuth2Config) => void;
   configPath?: () => string;
+  /** Serialize the read-modify-write against other config writers (default: store lock for the file store). */
+  runExclusive?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 export interface ConfigKeyValue {
@@ -150,6 +157,12 @@ export async function runConfigSet(
 ): Promise<{ data: ConfigKeyValue; human: string }> {
   const readConfigFn = deps.readConfig ?? readOAuth2Config;
   const writeConfigFn = deps.writeConfig ?? writeOAuth2Config;
+  // A caller that injects its own store owns its own serialization; the
+  // default (file) store must take the shared writer lock so this
+  // read-modify-write cannot resurrect a credential rotated by a concurrent
+  // refresh (FIN-78 review blocker 1).
+  const usingFileStore = !deps.readConfig && !deps.writeConfig;
+  const runExclusive = deps.runExclusive ?? (usingFileStore ? withConfigStoreLock : runInline);
 
   const { positionals } = parseArgs(argv);
   const [key, value] = positionals;
@@ -157,14 +170,24 @@ export async function runConfigSet(
     throw new FinchError("USAGE_ERROR", "finch config set requires <key> <value>");
   }
 
-  const config = readConfigFn();
-  if (!config) {
-    throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
-  }
+  // Read the snapshot INSIDE the lock, mutate only the field this command
+  // owns (a defaults.* key — auth.* is rejected in setConfigValue), and write
+  // before releasing, so the freshest concurrently-persisted auth block is
+  // carried through untouched.
+  return runExclusive(async () => {
+    const config = readConfigFn();
+    if (!config) {
+      throw new FinchError("AUTH_ERROR", "Finch is not configured. Run `finch auth` first.");
+    }
 
-  const { config: updated, result } = setConfigValue(config, key, value);
-  writeConfigFn(updated);
-  return { data: result, human: `${result.key} = ${result.value}` };
+    const { config: updated, result } = setConfigValue(config, key, value);
+    writeConfigFn(updated);
+    return { data: result, human: `${result.key} = ${result.value}` };
+  });
+}
+
+function runInline<T>(fn: () => Promise<T>): Promise<T> {
+  return fn();
 }
 
 /** `finch config path`: prints the resolved `~/.finch/config` path. */
