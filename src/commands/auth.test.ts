@@ -538,6 +538,12 @@ describe("parseClientIdFlag", () => {
   test("prefers equals-syntax over a following bare value", () => {
     expect(parseClientIdFlag(["--client-id=abc123", "--client-id", "def456"])).toBe("abc123");
   });
+
+  test("stops at the -- terminator (a --client-id after it is positional, not a flag)", () => {
+    expect(parseClientIdFlag(["--", "--client-id", "abc123"])).toBeUndefined();
+    // A --client-id before the terminator is still honored.
+    expect(parseClientIdFlag(["--client-id", "abc123", "--", "x"])).toBe("abc123");
+  });
 });
 
 // FIN-81: unrecognized/misspelled flags must be rejected, not silently dropped.

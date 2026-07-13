@@ -208,6 +208,11 @@ async function openSystemBrowser(url: string): Promise<void> {
 export function parseClientIdFlag(args: string[]): string | undefined {
   let i = 0;
   for (const arg of args) {
+    // Stop at the POSIX `--` terminator, consistent with assertKnownAuthFlags:
+    // a `--client-id` appearing after it is positional free text, not a flag.
+    if (arg === "--") {
+      return undefined;
+    }
     if (arg === "--client-id") {
       return args[i + 1];
     }
