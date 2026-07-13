@@ -220,6 +220,44 @@ export function parseClientIdFlag(args: string[]): string | undefined {
 }
 
 /**
+ * FIN-81: reject any unrecognized flag passed to `finch auth`.
+ *
+ * The only flag `finch auth` accepts is `--client-id` (space- or `=`-separated).
+ * Previously an unrecognized/misspelled flag (e.g. a typo'd `--clinet-id`) was
+ * silently dropped, and `resolveClientId()` fell through to the persisted/env
+ * client ID — producing a confusing downstream OAuth rejection with no hint the
+ * flag was ignored. Reject it loudly instead of guessing.
+ *
+ * Called with the args AFTER `finch auth` (i.e. `argv.slice(1)` at the auth
+ * dispatch). Stray non-flag positionals are left alone: `auth` takes none and
+ * ignores them, and this change is scoped to flag typos, not positionals.
+ */
+export function assertKnownAuthFlags(args: string[]): void {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === undefined) continue;
+    // `--client-id <value>` consumes the next token as its value, so skip it —
+    // otherwise a legitimate value that happens to start with "-" would trip
+    // the unknown-flag check below.
+    if (arg === "--client-id") {
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--client-id=")) continue;
+    // A lone "-" is a conventional stdin placeholder, not a flag; anything else
+    // starting with "-" is a flag `finch auth` does not recognize.
+    if (arg.startsWith("-") && arg !== "-") {
+      throw new FinchError(
+        "USAGE_ERROR",
+        `Unknown flag "${arg}" for 'finch auth'. The only flag it accepts is --client-id ` +
+          "(e.g. finch auth --client-id <id>).",
+        { flag: arg },
+      );
+    }
+  }
+}
+
+/**
  * `finch auth`: OAuth 2.0 PKCE browser + local-callback flow. Generates an
  * authorization URL, starts a one-shot local HTTP server, opens the system
  * browser, exchanges the returned authorization code, validates the token
