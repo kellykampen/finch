@@ -4,8 +4,12 @@
 #
 # Automates every numbered known-answer check from
 # .claude/orchestration/regression-checklist.md against the compiled Finch
-# binary. Runs in a fully sandboxed HOME for any check that touches
-# ~/.finch/config or runs finch auth / finch config.
+# binary. Runs in a fully sandboxed HOME + FINCH_CONFIG_PATH for any check
+# that touches ~/.finch/config or runs finch auth / finch config. FIN-77 made
+# the default config path resolve to the real user's canonical
+# ~/.finch/config regardless of a caller-set $HOME, so sandbox HOME alone no
+# longer isolates the config file — FINCH_CONFIG_PATH must be set explicitly
+# to keep every check below from touching real credentials.
 #
 # Usage:
 #   ./scripts/regression-checklist.sh
@@ -102,7 +106,7 @@ check_5_auth_status_unconfigured() {
 
     local output rc
     set +e
-    output="$(HOME="$SANDBOX_HOME" "$FINCH_BIN" auth status --json)"
+    output="$(HOME="$SANDBOX_HOME" FINCH_CONFIG_PATH="$SANDBOX_HOME/.finch/config" "$FINCH_BIN" auth status --json)"
     rc=$?
     set -e
     [ "$rc" -eq 0 ] || { echo "expected exit 0, got $rc" >&2; exit 1; }
@@ -127,6 +131,7 @@ check_6_config_permissions() {
     SANDBOX_HOME="$(mktemp -d)"
     trap 'rm -rf "$SANDBOX_HOME"' EXIT
     export HOME="$SANDBOX_HOME"
+    export FINCH_CONFIG_PATH="$SANDBOX_HOME/.finch/config"
 
     mkdir -p "$SANDBOX_HOME/.finch"
     cat > "$SANDBOX_HOME/.finch/config" <<'JSON'
@@ -169,6 +174,7 @@ check_7_json_output_shape() {
     SANDBOX_HOME="$(mktemp -d)"
     trap 'rm -rf "$SANDBOX_HOME"' EXIT
     export HOME="$SANDBOX_HOME"
+    export FINCH_CONFIG_PATH="$SANDBOX_HOME/.finch/config"
 
     local output rc
     set +e
@@ -196,6 +202,7 @@ check_8_mcp_tools() {
     HELPER="$(mktemp)"
     trap 'rm -rf "$SANDBOX_HOME" "$HELPER"' EXIT
     export HOME="$SANDBOX_HOME"
+    export FINCH_CONFIG_PATH="$SANDBOX_HOME/.finch/config"
 
     cat > "$HELPER" <<'NODE'
 const { spawn } = require("child_process");
@@ -297,6 +304,7 @@ check_9_config_masking() {
     SANDBOX_HOME="$(mktemp -d)"
     trap 'rm -rf "$SANDBOX_HOME"' EXIT
     export HOME="$SANDBOX_HOME"
+    export FINCH_CONFIG_PATH="$SANDBOX_HOME/.finch/config"
 
     mkdir -p "$SANDBOX_HOME/.finch"
     local CLIENT_ID="regression-test-client-id-123456789"

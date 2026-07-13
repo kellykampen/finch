@@ -78,11 +78,18 @@ duplicated between the two surfaces, and no direct X API imports outside `OAuth2
 unambiguous reference for that path; the "Auth / config" row in the v1 command spec below is
 the same command, described in-line with the rest of the CLI surface.
 
-- **File path:** `~/.finch/config` by default (i.e. `$HOME/.finch/config`, never `$PWD`).
-  `FINCH_CONFIG_PATH` may select one absolute canonical path for execution contexts with
-  divergent `HOME` values. Every credential writer must use the same path because the adjacent
-  refresh lock and rotating refresh-token state are store-scoped. No project-local config file
-  in v1 — one account, one machine, one writable credential store.
+- **File path:** `~/.finch/config` by default, resolved to the canonical real-user home
+  directory (via the OS user database, keyed on the process's real uid — never `$PWD`, and
+  never trusting a caller-set `$HOME`; see `src/core/config.ts`'s `resolveCanonicalHomeDir`).
+  FIN-74 found that resolving the default from `process.env.HOME` directly let two local
+  callers launched with different `HOME` values silently diverge onto two separate config
+  snapshots; FIN-77 fixed the default itself so every caller for the same OS user already
+  shares one canonical path without needing an override. `FINCH_CONFIG_PATH` remains available
+  to select an explicit absolute path for **intentionally isolated** execution contexts (tests,
+  CI, E2B, no-live smokes) that must not touch the real credential store. Every credential
+  writer sharing a store must use the same path (explicit or canonical-default) because the
+  adjacent refresh lock and rotating refresh-token state are store-scoped. No project-local
+  config file in v1 — one account, one machine, one writable credential store.
 - **Permissions:** created at `0600` by `finch auth`; every subsequent read/write by Finch
   re-checks and re-applies `0600` in case another process touched it.
 - **Format:** JSON.
@@ -158,12 +165,16 @@ session survives requires wall-clock elapsed time across several access-token ex
 is the manual acceptance procedure for that target; run it once per change that touches the
 refresh/lock path, and record the evidence on the PR.
 
-**Safety (non-negotiable):** run the whole procedure under a sandboxed `$HOME` so it never
-reads or refreshes the operator's real `~/.finch/config` (see fleet rule 12). Every `finch`
-invocation below inherits that sandboxed home:
+**Safety (non-negotiable):** run the whole procedure under a sandboxed `$HOME` **and** an
+explicit `FINCH_CONFIG_PATH` so it never reads or refreshes the operator's real
+`~/.finch/config` (see fleet rule 12). FIN-77 made the default config path resolve to the
+canonical real-user home regardless of a caller-set `$HOME`, so `$HOME` alone no longer
+isolates anything — `FINCH_CONFIG_PATH` is the only reliable isolation mechanism. Every
+`finch` invocation below inherits both:
 
 ```bash
-export HOME="$(mktemp -d)"   # sandbox; real ~/.finch/config is never touched
+export HOME="$(mktemp -d)"                            # sandbox home, for general hygiene
+export FINCH_CONFIG_PATH="$HOME/.finch/config"         # the actual isolation: real ~/.finch/config is never touched
 ```
 
 1. **Authenticate once (T0).** Run `finch auth` a single time (real Client ID, complete the

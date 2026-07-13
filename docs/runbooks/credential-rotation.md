@@ -89,11 +89,14 @@ after rotation" spot-check, and never paste their output anywhere (see
 [What to paste back to Linear](#what-to-paste-back-to-linear)).
 
 **If you are illustrating any of the above** (docs, a demo, a training session) rather
-than checking a real account, always run it under a sandboxed `$HOME` so nothing touches
-the real `~/.finch/config`:
+than checking a real account, always run it under a sandboxed `$HOME` **and** an explicit
+`FINCH_CONFIG_PATH` so nothing touches the real `~/.finch/config`. FIN-77 made the default
+config path resolve to the canonical real-user home regardless of a caller-set `$HOME`, so
+`$HOME` alone no longer isolates anything — `FINCH_CONFIG_PATH` is what actually does:
 
 ```bash
-HOME=$(mktemp -d) ./finch auth status --json
+SANDBOX=$(mktemp -d)
+HOME="$SANDBOX" FINCH_CONFIG_PATH="$SANDBOX/.finch/config" ./finch auth status --json
 ```
 
 Never run a verification command — even a read-only one like `auth status` or

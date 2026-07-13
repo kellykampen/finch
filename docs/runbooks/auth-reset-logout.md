@@ -59,12 +59,16 @@ finch auth status   # confirms {configured: false} — the clean "logged out" st
 ```
 
 Use `finch config path` first rather than assuming `~/.finch/config`. An absolute
-`FINCH_CONFIG_PATH` takes precedence; otherwise the path is resolved from `$HOME` at
-runtime. Give every credential-using local process the same override when their `HOME`
-values may differ—X refresh tokens can rotate, and independent writable copies do not
-share Finch's adjacent refresh lock. Confirming the path avoids removing the wrong file.
-Never `cat` the file first "to check"—that would print live tokens for no reason; the
-path alone is enough to confirm you're targeting the right location.
+`FINCH_CONFIG_PATH` takes precedence if set; otherwise (FIN-77) the path resolves to the
+canonical config location for the real OS user Finch is running as, via the OS user
+database rather than the `$HOME` environment variable — so every default-config caller
+for that user already shares one file and refresh lock regardless of what `$HOME` each
+process happens to have, and no manual override is needed just to avoid divergent
+snapshots (see README's "Auth setup" section). An explicit `FINCH_CONFIG_PATH` is only
+needed for intentionally isolated setups (tests, CI, E2B); confirming the path with
+`finch config path` still avoids removing the wrong file in that case. Never `cat` the
+file first "to check"—that would print live tokens for no reason; the path alone is
+enough to confirm you're targeting the right location.
 
 ### Destructive-behavior warning
 

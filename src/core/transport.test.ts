@@ -2025,16 +2025,21 @@ describe("createRefreshingOAuth2Transport", () => {
 
   describe("default persist path", () => {
     let fakeHome: string;
-    let originalHome: string | undefined;
+    let originalConfigPath: string | undefined;
 
+    // FIN-77: configPath() no longer defaults from $HOME, so isolation here
+    // uses the documented FINCH_CONFIG_PATH override instead — spoofing HOME
+    // would now be a no-op and this suite would silently read/write the
+    // real ~/.finch/config.
     beforeEach(() => {
       fakeHome = mkdtempSync(join(tmpdir(), "finch-transport-test-"));
-      originalHome = process.env.HOME;
-      process.env.HOME = fakeHome;
+      originalConfigPath = process.env.FINCH_CONFIG_PATH;
+      process.env.FINCH_CONFIG_PATH = join(fakeHome, ".finch", "config");
     });
 
     afterEach(() => {
-      process.env.HOME = originalHome;
+      if (originalConfigPath === undefined) delete process.env.FINCH_CONFIG_PATH;
+      else process.env.FINCH_CONFIG_PATH = originalConfigPath;
       rmSync(fakeHome, { recursive: true, force: true });
     });
 

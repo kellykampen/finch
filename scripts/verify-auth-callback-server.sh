@@ -79,7 +79,9 @@ if [[ ! -x "$FINCH_BIN" ]]; then
   (cd "$REPO_ROOT" && bun build --compile ./src/index.ts --outfile finch)
 fi
 
-# Never touch a real config: run with a disposable HOME.
+# Never touch a real config: run with a disposable HOME + FINCH_CONFIG_PATH.
+# FIN-77 made the default config path canonical-user-resolved regardless of a
+# caller-set $HOME, so HOME alone no longer isolates the config file.
 SANDBOX_HOME="$(mktemp -d)"
 # Also prevent the auth flow from spawning a real browser by shadowing the
 # platform opener commands with no-op scripts placed first in PATH.
@@ -95,6 +97,7 @@ OPENER
 done
 
 export HOME="$SANDBOX_HOME"
+export FINCH_CONFIG_PATH="$SANDBOX_HOME/.finch/config"
 export PATH="$BROWSER_BIN_DIR:$PATH"
 
 FINCH_LOG="$(mktemp)"
