@@ -64,6 +64,35 @@ export function configPath(): string {
   return join(resolveCanonicalHomeDir(), ".finch", "config");
 }
 
+// Fail-closed guard against a test/CI run mutating the REAL user config.
+//
+// Since FIN-77, configPath() resolves to the canonical real-user home
+// (~kellykampen/.finch/config) REGARDLESS of $HOME — so a sandboxed
+// `HOME=$(mktemp -d)` no longer isolates a test's config writes. The only
+// remaining isolation lever is an explicit FINCH_CONFIG_PATH. The Bun test
+// preload (src/test-preload.ts) sets FINCH_TEST_RUNTIME=1 for every test
+// process and defaults FINCH_CONFIG_PATH to a throwaway temp path; if a test
+// nonetheless attempts a config MUTATION with no explicit FINCH_CONFIG_PATH
+// (e.g. it deleted the env var, or the default somehow didn't apply), refuse
+// loudly here instead of silently stomping the operator's real credentials.
+//
+// This is a no-op in production (FINCH_TEST_RUNTIME is never set by the
+// compiled binary), so real `finch auth` writes are unaffected. It MUST be
+// called before any filesystem mutation (mkdir / lock-file / writeFile), so
+// every mutation entry point in the config store calls it first.
+export function assertConfigWriteIsolatedInTests(): void {
+  if (process.env.FINCH_TEST_RUNTIME && !process.env.FINCH_CONFIG_PATH?.trim()) {
+    throw new FinchError(
+      "USAGE_ERROR",
+      "Refusing to write the real user config during a test run: FINCH_CONFIG_PATH is not set. " +
+        "Every test that persists config must isolate it by pointing FINCH_CONFIG_PATH at a temp " +
+        "path. Since FIN-77 a sandboxed $HOME no longer isolates the config path — only " +
+        "FINCH_CONFIG_PATH does.",
+      { reason: "test_config_write_without_isolation" },
+    );
+  }
+}
+
 export const CONFIG_DIR_MODE = 0o700;
 
 const SECRET_VISIBLE_SUFFIX_LENGTH = 4;
