@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runAuth, runAuthStatus, parseClientIdFlag, startLocalCallbackServer } from "./auth";
+import { runAuth, runAuthStatus, parseClientIdFlag, assertKnownAuthFlags, startLocalCallbackServer } from "./auth";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import { createRefreshingOAuth2Transport } from "../core/transport";
@@ -537,6 +537,60 @@ describe("parseClientIdFlag", () => {
 
   test("prefers equals-syntax over a following bare value", () => {
     expect(parseClientIdFlag(["--client-id=abc123", "--client-id", "def456"])).toBe("abc123");
+  });
+
+  test("stops at the -- terminator (a --client-id after it is positional, not a flag)", () => {
+    expect(parseClientIdFlag(["--", "--client-id", "abc123"])).toBeUndefined();
+    // A --client-id before the terminator is still honored.
+    expect(parseClientIdFlag(["--client-id", "abc123", "--", "x"])).toBe("abc123");
+  });
+});
+
+// FIN-81: unrecognized/misspelled flags must be rejected, not silently dropped.
+describe("assertKnownAuthFlags", () => {
+  test("rejects a misspelled --client-id (the CEO's --clinet-id typo)", () => {
+    expect(() => assertKnownAuthFlags(["--clinet-id", "abcd1234"])).toThrow(FinchError);
+    try {
+      assertKnownAuthFlags(["--clinet-id", "abcd1234"]);
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("USAGE_ERROR");
+      expect((err as FinchError).message).toContain("--clinet-id");
+      expect((err as FinchError).message).toContain("--client-id");
+    }
+  });
+
+  test("rejects any other unrecognized flag", () => {
+    expect(() => assertKnownAuthFlags(["--force"])).toThrow(/Unknown flag/);
+    expect(() => assertKnownAuthFlags(["-x"])).toThrow(/Unknown flag/);
+    expect(() => assertKnownAuthFlags(["--client-id", "abc", "--nope"])).toThrow(/--nope/);
+  });
+
+  test("accepts the recognized --client-id in both syntaxes, and no flags", () => {
+    expect(() => assertKnownAuthFlags([])).not.toThrow();
+    expect(() => assertKnownAuthFlags(["--client-id", "abc123"])).not.toThrow();
+    expect(() => assertKnownAuthFlags(["--client-id=abc123"])).not.toThrow();
+  });
+
+  test("does not misread a --client-id value that itself looks like a flag", () => {
+    // The space-separated value is consumed and never treated as an unknown flag.
+    expect(() => assertKnownAuthFlags(["--client-id", "--weird-but-a-value"])).not.toThrow();
+  });
+
+  // Review finding: --client-id with no value must error, not silently fall
+  // back to persisted/env creds (that fallback is the FIN-81 bug class).
+  test("rejects --client-id with a missing value (flag is the last arg)", () => {
+    expect(() => assertKnownAuthFlags(["--client-id"])).toThrow(/Missing value for --client-id/);
+  });
+
+  test("rejects an empty --client-id= value", () => {
+    expect(() => assertKnownAuthFlags(["--client-id="])).toThrow(/Missing value for --client-id/);
+  });
+
+  // Review finding: the POSIX `--` terminator must not be mistaken for a flag.
+  test("stops flag-checking at the -- terminator and ignores what follows", () => {
+    expect(() => assertKnownAuthFlags(["--client-id=abc", "--", "extra"])).not.toThrow();
+    expect(() => assertKnownAuthFlags(["--", "--clinet-id"])).not.toThrow();
   });
 });
 

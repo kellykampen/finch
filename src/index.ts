@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { FinchError, exitCodeForError } from "./core/errors";
-import { runAuth, runAuthStatus, parseClientIdFlag } from "./commands/auth";
+import { runAuth, runAuthStatus, parseClientIdFlag, assertKnownAuthFlags } from "./commands/auth";
 import { runVersion } from "./commands/version";
 import { runWhoami } from "./commands/whoami";
 import { runPost } from "./commands/post";
@@ -45,7 +45,9 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runAuthStatus();
   }
   if (cmd === "auth") {
-    return runAuth({ clientId: parseClientIdFlag(args.slice(1)) });
+    const authArgs = args.slice(1);
+    assertKnownAuthFlags(authArgs);
+    return runAuth({ clientId: parseClientIdFlag(authArgs) });
   }
   if (cmd === "whoami") {
     return runWhoami();

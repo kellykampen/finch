@@ -96,6 +96,20 @@ describe("finch CLI arg parsing / exit codes", () => {
     });
   });
 
+  // FIN-81: a misspelled --client-id (CEO typo'd `--clinet-id`) used to be
+  // silently dropped, then resolveClientId() fell through to persisted/env creds
+  // and the auth flow proceeded with the wrong client_id. It must error instead.
+  test("auth rejects a misspelled --client-id flag instead of silently proceeding (FIN-81)", () => {
+    const { exitCode, stdout } = runCli(["auth", "--clinet-id", "abcd1234", "--json"]);
+
+    expect(exitCode).toBe(2);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.message).toContain("--clinet-id");
+    expect(envelope.error.message).toContain("--client-id");
+  });
+
   test("config path prints the resolved path without requiring a config file", () => {
     const { exitCode, stdout } = runCli(["config", "path", "--json"]);
 

@@ -208,6 +208,11 @@ async function openSystemBrowser(url: string): Promise<void> {
 export function parseClientIdFlag(args: string[]): string | undefined {
   let i = 0;
   for (const arg of args) {
+    // Stop at the POSIX `--` terminator, consistent with assertKnownAuthFlags:
+    // a `--client-id` appearing after it is positional free text, not a flag.
+    if (arg === "--") {
+      return undefined;
+    }
     if (arg === "--client-id") {
       return args[i + 1];
     }
@@ -217,6 +222,60 @@ export function parseClientIdFlag(args: string[]): string | undefined {
     i++;
   }
   return undefined;
+}
+
+/**
+ * FIN-81: reject any unrecognized flag passed to `finch auth`.
+ *
+ * The only flag `finch auth` accepts is `--client-id` (space- or `=`-separated).
+ * Previously an unrecognized/misspelled flag (e.g. a typo'd `--clinet-id`) was
+ * silently dropped, and `resolveClientId()` fell through to the persisted/env
+ * client ID — producing a confusing downstream OAuth rejection with no hint the
+ * flag was ignored. Reject it loudly instead of guessing.
+ *
+ * Called with the args AFTER `finch auth` (i.e. `argv.slice(1)` at the auth
+ * dispatch). Stray non-flag positionals are left alone: `auth` takes none and
+ * ignores them, and this change is scoped to flag typos, not positionals.
+ */
+export function assertKnownAuthFlags(args: string[]): void {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === undefined) continue;
+    // POSIX end-of-flags terminator: everything at or after `--` is positional
+    // free text, never a flag (resolveDispatchArgs preserves it). `finch auth`
+    // takes no positionals and ignores them, so stop flag-checking here.
+    if (arg === "--") return;
+    // `--client-id <value>` consumes the next token as its value. A missing
+    // value (flag is the last arg) is a usage error, not a silent fall-through
+    // to persisted/env creds — that silent fallback is exactly the FIN-81 bug.
+    if (arg === "--client-id") {
+      if (args[i + 1] === undefined) {
+        throw new FinchError("USAGE_ERROR", "Missing value for --client-id (e.g. finch auth --client-id <id>).", {
+          flag: "--client-id",
+        });
+      }
+      i++; // consume the value, so a value that looks like a flag isn't reflagged
+      continue;
+    }
+    if (arg.startsWith("--client-id=")) {
+      if (arg.slice("--client-id=".length) === "") {
+        throw new FinchError("USAGE_ERROR", "Missing value for --client-id (e.g. finch auth --client-id=<id>).", {
+          flag: "--client-id",
+        });
+      }
+      continue;
+    }
+    // A lone "-" is a conventional stdin placeholder, not a flag; anything else
+    // starting with "-" is a flag `finch auth` does not recognize.
+    if (arg.startsWith("-") && arg !== "-") {
+      throw new FinchError(
+        "USAGE_ERROR",
+        `Unknown flag "${arg}" for 'finch auth'. The only flag it accepts is --client-id ` +
+          "(e.g. finch auth --client-id <id>).",
+        { flag: arg },
+      );
+    }
+  }
 }
 
 /**
