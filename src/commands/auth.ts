@@ -4,6 +4,7 @@ import { createPromptSession } from "../core/prompt";
 import {
   readOAuth2Config,
   writeOAuth2Config,
+  withConfigStoreLock,
   type FinchOAuth2Config,
   type OAuth2AuthConfig,
 } from "../core/oauth2-config";
@@ -60,6 +61,8 @@ export interface OAuth2AuthDeps {
   openBrowser?: (url: string) => Promise<void>;
   createTransport?: (accessToken: string) => XTransport;
   writeOAuth2Config?: (config: FinchOAuth2Config) => void;
+  /** Serialize the final config write against other config writers (default: store lock for the file store). */
+  runExclusive?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 export interface RunAuthOptions {
@@ -89,16 +92,38 @@ async function resolveClientId(deps: OAuth2AuthDeps): Promise<string> {
   return await (deps.promptClientId ?? promptClientIdInteractive)();
 }
 
-// Best-effort read of the stored Client ID. `finch auth` is also the recovery
+// Best-effort read of the stored config. `finch auth` is also the recovery
 // path for a legacy (pre-OAuth2) or corrupt config, both of which make
-// readOAuth2Config throw — so a failed read must fall through to the prompt
+// readOAuth2Config throw — so a failed read must degrade to "no prior config"
 // rather than break re-authentication (PLAN.md hard-cutover note).
-function readPersistedClientId(deps: OAuth2AuthDeps): string | undefined {
+function readPersistedConfig(deps: OAuth2AuthDeps): FinchOAuth2Config | null {
   try {
-    return (deps.readOAuth2Config ?? readOAuth2Config)()?.auth?.clientId || undefined;
+    return (deps.readOAuth2Config ?? readOAuth2Config)();
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+function readPersistedClientId(deps: OAuth2AuthDeps): string | undefined {
+  return readPersistedConfig(deps)?.auth?.clientId || undefined;
+}
+
+const FACTORY_DEFAULTS = { json: false, count: 10 };
+
+function runInline<T>(fn: () => Promise<T>): Promise<T> {
+  return fn();
+}
+
+// Re-auth rewrites the whole config file; the operator's non-secret settings
+// must survive it. Only adopt a persisted `defaults` block that matches the
+// documented shape — the guarded read above swallows corruption, so this is
+// the last line of defense against writing a malformed block back (FIN-78).
+function persistedDefaults(deps: OAuth2AuthDeps): { json: boolean; count: number } {
+  const defaults = readPersistedConfig(deps)?.defaults;
+  if (defaults && typeof defaults.json === "boolean" && typeof defaults.count === "number") {
+    return defaults;
+  }
+  return FACTORY_DEFAULTS;
 }
 
 function createRealOAuth2Client(config: { clientId: string; redirectUri: string; scope: string[] }): OAuth2ClientLike {
@@ -237,19 +262,47 @@ export async function runAuth(options: RunAuthOptions = {}): Promise<{ data: Aut
 
   const token = await oauth2.exchangeCode(callback.code, codeVerifier);
 
+  // Requesting offline.access does not guarantee X issued a refresh token
+  // (the scope can be denied on the consent screen or by X app settings). A
+  // grant without one cannot outlive its ~2h access token, so persisting it —
+  // possibly over a previously refreshable session — would recreate the
+  // FIN-78 "re-auth several times a day" failure. Fail before any validation
+  // call or config write; the prior config (if any) stays untouched.
+  if (!token.refresh_token) {
+    throw new FinchError(
+      "AUTH_ERROR",
+      "X did not issue a refresh token, so this login could not stay signed in past its short-lived " +
+        "access token. Nothing was saved — your previous credentials (if any) are untouched. Ensure the " +
+        "offline.access scope is approved on the consent screen and allowed by your X app settings, then " +
+        "run `finch auth` again.",
+      { reason: "missing_refresh_token" },
+    );
+  }
+  const refreshToken = token.refresh_token;
+
   const transport = (deps.createTransport ?? createOAuth2Transport)(token.access_token);
   const me = await transport.getMe();
 
-  (deps.writeOAuth2Config ?? writeOAuth2Config)({
-    auth: {
-      clientId,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token ?? "",
-      expiresAt: Date.now() + token.expires_in * 1000,
-      scopes: (token.scope ?? OAUTH2_SCOPES.join(" ")).split(" ").filter(Boolean),
-    },
-    transport: "oauth2",
-    defaults: { json: false, count: 10 },
+  // The final write is a whole-config replacement, so it must run under the
+  // shared store lock and re-read the freshest snapshot inside it: re-auth
+  // owns `auth` (the newly issued credential wins) but must carry forward the
+  // latest `defaults`, which a concurrent refresh or `config set` may have
+  // just persisted (FIN-78 review blocker 1). Callers that inject their own
+  // store own their own serialization.
+  const usingFileStore = !deps.writeOAuth2Config;
+  const runExclusive = deps.runExclusive ?? (usingFileStore ? withConfigStoreLock : runInline);
+  await runExclusive(async () => {
+    (deps.writeOAuth2Config ?? writeOAuth2Config)({
+      auth: {
+        clientId,
+        accessToken: token.access_token,
+        refreshToken,
+        expiresAt: Date.now() + token.expires_in * 1000,
+        scopes: (token.scope ?? OAUTH2_SCOPES.join(" ")).split(" ").filter(Boolean),
+      },
+      transport: "oauth2",
+      defaults: persistedDefaults(deps),
+    });
   });
 
   return {

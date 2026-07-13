@@ -1,7 +1,12 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runConfigGet, runConfigSet, runConfigPath } from "./config";
 import { FinchError } from "../core/errors";
-import type { FinchOAuth2Config } from "../core/oauth2-config";
+import { configPath } from "../core/config";
+import { withFileLock } from "../core/refresh-lock";
+import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "../core/oauth2-config";
 
 const sampleAuth = {
   clientId: "client123456",
@@ -206,5 +211,67 @@ describe("runConfigPath", () => {
   test("prints the resolved config path without requiring the file to exist", async () => {
     const result = await runConfigPath([], { configPath: () => "/home/fake/.finch/config" });
     expect(result.data).toEqual({ path: "/home/fake/.finch/config" });
+  });
+});
+
+// FIN-78 review blocker 1: `config set` used to read a whole-config snapshot
+// and write it back without the credential store lock. If a refresh rotated
+// the (single-use) refresh token in between, config set's write silently
+// restored the stale credential and the next refresh would spend an
+// already-rotated token. Deterministic interleaving: a "refresh" holds the
+// store lock and persists a rotated credential; config set, started while the
+// lock is held, must wait, re-read, and merge only the field it owns.
+describe("FIN-78 regression: config set vs in-flight refresh", () => {
+  let sandbox: string;
+  let originalConfigPath: string | undefined;
+
+  beforeEach(() => {
+    sandbox = mkdtempSync(join(tmpdir(), "finch-fin78-config-test-"));
+    originalConfigPath = process.env.FINCH_CONFIG_PATH;
+    process.env.FINCH_CONFIG_PATH = join(sandbox, ".finch", "config");
+  });
+
+  afterEach(() => {
+    if (originalConfigPath === undefined) delete process.env.FINCH_CONFIG_PATH;
+    else process.env.FINCH_CONFIG_PATH = originalConfigPath;
+    rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  function storedConfig(refreshToken: string): FinchOAuth2Config {
+    return {
+      auth: { ...sampleAuth, refreshToken },
+      transport: "oauth2",
+      defaults: { json: false, count: 10 },
+    };
+  }
+
+  test("config set waits for the store lock and merges onto the rotated credential", async () => {
+    writeOAuth2Config(storedConfig("refresh-A"));
+
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    // Simulated in-flight refresh: holds the store lock, then persists the
+    // rotated credential B just before releasing — exactly what a concurrent
+    // `RefreshingOAuth2Transport.performRefresh()` does.
+    const refreshHolder = withFileLock(`${configPath()}.refresh.lock`, async () => {
+      await refreshGate;
+      writeOAuth2Config(storedConfig("refresh-B"));
+    });
+
+    const setPromise = runConfigSet(["defaults.count", "25"]);
+    // Give an unserialized (broken) config set every chance to do its stale
+    // read-modify-write while the refresh still holds the lock.
+    await Bun.sleep(75);
+    releaseRefresh();
+    await refreshHolder;
+    await setPromise;
+
+    const final = readOAuth2Config();
+    // The rotated credential must survive (config set does not own auth)…
+    expect(final?.auth.refreshToken).toBe("refresh-B");
+    // …and the operator's change must land (config set owns defaults).
+    expect(final?.defaults.count).toBe(25);
   });
 });
