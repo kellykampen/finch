@@ -13,8 +13,8 @@
 // Two layers of protection, both established here:
 //   1. FINCH_TEST_RUNTIME marks the process as a test run. Every config
 //      mutation entry point (writeOAuth2Config, withConfigStoreLock) calls
-//      assertConfigWriteIsolatedInTests(), which throws if a write is
-//      attempted during a test run without an explicit FINCH_CONFIG_PATH.
+//      assertConfigIsolatedInTests(), which throws if the real config is
+//      touched during a test run without an explicit FINCH_CONFIG_PATH.
 //      This is the fail-closed catch if isolation is ever bypassed.
 //   2. A default isolated FINCH_CONFIG_PATH so a test that simply forgot to
 //      set one still writes to a throwaway temp file, never the real path.

@@ -7,7 +7,7 @@ import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import { createRefreshingOAuth2Transport } from "../core/transport";
 import { readOAuth2Config, writeOAuth2Config } from "../core/oauth2-config";
-import { configPath } from "../core/config";
+import { configPath, __setCanonicalHomeForTests, __resetCanonicalHomeCacheForTests } from "../core/config";
 import { withFileLock } from "../core/refresh-lock";
 
 import type { FinchOAuth2Config, OAuth2AuthConfig } from "../core/oauth2-config";
@@ -763,11 +763,15 @@ describe("FIN-77 regression: an unisolated runAuth cannot write the real config"
   beforeEach(() => {
     savedConfigPath = process.env.FINCH_CONFIG_PATH;
     delete process.env.FINCH_CONFIG_PATH;
+    // Safety net: even if the guard were removed, the fallback write lands in a
+    // temp sandbox, never the operator's real ~/.finch (see config-isolation.test.ts).
+    __setCanonicalHomeForTests(mkdtempSync(join(tmpdir(), "finch-fin77-replay-")));
   });
 
   afterEach(() => {
     if (savedConfigPath === undefined) delete process.env.FINCH_CONFIG_PATH;
     else process.env.FINCH_CONFIG_PATH = savedConfigPath;
+    __resetCanonicalHomeCacheForTests();
   });
 
   test("a successful auth with no injected writer fails closed instead of persisting", async () => {

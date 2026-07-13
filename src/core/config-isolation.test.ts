@@ -1,6 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assertConfigWriteIsolatedInTests } from "./config";
+import { join } from "node:path";
+import { assertConfigIsolatedInTests, __setCanonicalHomeForTests, __resetCanonicalHomeCacheForTests } from "./config";
 import { writeOAuth2Config, withConfigStoreLock, type FinchOAuth2Config } from "./oauth2-config";
 
 // FIN-77 real-config-overwrite regression.
@@ -48,15 +50,21 @@ describe("test-run config isolation (FIN-77 regression)", () => {
     beforeEach(() => {
       saved = process.env.FINCH_CONFIG_PATH;
       delete process.env.FINCH_CONFIG_PATH;
+      // Safety net: pin the canonical-home fallback to a throwaway dir. The
+      // guard should throw before configPath() is ever consulted, but if it
+      // were removed the write would then land here — a temp sandbox — instead
+      // of the operator's real ~/.finch. A failing test must never destroy creds.
+      __setCanonicalHomeForTests(mkdtempSync(join(tmpdir(), "finch-isolation-guard-")));
     });
 
     afterEach(() => {
       if (saved === undefined) delete process.env.FINCH_CONFIG_PATH;
       else process.env.FINCH_CONFIG_PATH = saved;
+      __resetCanonicalHomeCacheForTests();
     });
 
-    test("assertConfigWriteIsolatedInTests throws", () => {
-      expect(() => assertConfigWriteIsolatedInTests()).toThrow(/FINCH_CONFIG_PATH is not set/);
+    test("assertConfigIsolatedInTests throws", () => {
+      expect(() => assertConfigIsolatedInTests()).toThrow(/FINCH_CONFIG_PATH is not set/);
     });
 
     test("writeOAuth2Config refuses to write (fails closed before any fs access)", () => {
@@ -73,6 +81,6 @@ describe("test-run config isolation (FIN-77 regression)", () => {
     // Re-enable isolation (as the preload/every well-behaved test does) and the
     // guard is a no-op — real behavior for both production and isolated tests.
     expect(process.env.FINCH_CONFIG_PATH).toBeTruthy();
-    expect(() => assertConfigWriteIsolatedInTests()).not.toThrow();
+    expect(() => assertConfigIsolatedInTests()).not.toThrow();
   });
 });
