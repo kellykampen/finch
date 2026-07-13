@@ -236,14 +236,30 @@ export function assertKnownAuthFlags(args: string[]): void {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === undefined) continue;
-    // `--client-id <value>` consumes the next token as its value, so skip it —
-    // otherwise a legitimate value that happens to start with "-" would trip
-    // the unknown-flag check below.
+    // POSIX end-of-flags terminator: everything at or after `--` is positional
+    // free text, never a flag (resolveDispatchArgs preserves it). `finch auth`
+    // takes no positionals and ignores them, so stop flag-checking here.
+    if (arg === "--") return;
+    // `--client-id <value>` consumes the next token as its value. A missing
+    // value (flag is the last arg) is a usage error, not a silent fall-through
+    // to persisted/env creds — that silent fallback is exactly the FIN-81 bug.
     if (arg === "--client-id") {
-      i++;
+      if (args[i + 1] === undefined) {
+        throw new FinchError("USAGE_ERROR", "Missing value for --client-id (e.g. finch auth --client-id <id>).", {
+          flag: "--client-id",
+        });
+      }
+      i++; // consume the value, so a value that looks like a flag isn't reflagged
       continue;
     }
-    if (arg.startsWith("--client-id=")) continue;
+    if (arg.startsWith("--client-id=")) {
+      if (arg.slice("--client-id=".length) === "") {
+        throw new FinchError("USAGE_ERROR", "Missing value for --client-id (e.g. finch auth --client-id=<id>).", {
+          flag: "--client-id",
+        });
+      }
+      continue;
+    }
     // A lone "-" is a conventional stdin placeholder, not a flag; anything else
     // starting with "-" is a flag `finch auth` does not recognize.
     if (arg.startsWith("-") && arg !== "-") {

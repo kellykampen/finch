@@ -570,6 +570,22 @@ describe("assertKnownAuthFlags", () => {
     // The space-separated value is consumed and never treated as an unknown flag.
     expect(() => assertKnownAuthFlags(["--client-id", "--weird-but-a-value"])).not.toThrow();
   });
+
+  // Review finding: --client-id with no value must error, not silently fall
+  // back to persisted/env creds (that fallback is the FIN-81 bug class).
+  test("rejects --client-id with a missing value (flag is the last arg)", () => {
+    expect(() => assertKnownAuthFlags(["--client-id"])).toThrow(/Missing value for --client-id/);
+  });
+
+  test("rejects an empty --client-id= value", () => {
+    expect(() => assertKnownAuthFlags(["--client-id="])).toThrow(/Missing value for --client-id/);
+  });
+
+  // Review finding: the POSIX `--` terminator must not be mistaken for a flag.
+  test("stops flag-checking at the -- terminator and ignores what follows", () => {
+    expect(() => assertKnownAuthFlags(["--client-id=abc", "--", "extra"])).not.toThrow();
+    expect(() => assertKnownAuthFlags(["--", "--clinet-id"])).not.toThrow();
+  });
 });
 
 describe("startLocalCallbackServer", () => {
