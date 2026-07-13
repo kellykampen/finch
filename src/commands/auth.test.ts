@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runAuth, runAuthStatus, parseClientIdFlag, startLocalCallbackServer } from "./auth";
@@ -7,6 +7,8 @@ import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import { createRefreshingOAuth2Transport } from "../core/transport";
 import { readOAuth2Config, writeOAuth2Config } from "../core/oauth2-config";
+import { configPath } from "../core/config";
+import { withFileLock } from "../core/refresh-lock";
 
 import type { FinchOAuth2Config, OAuth2AuthConfig } from "../core/oauth2-config";
 import type { OAuth2Token } from "@xdevplatform/xdk";
@@ -769,10 +771,13 @@ describe("FIN-78 regression: auth persistence through the real config store", ()
 
   // Deps that mock every network-touching seam but leave the config store
   // real, so the persistence chain under test is the production one.
-  function fileStoreAuthDeps(promptClientId: () => Promise<string>) {
+  function fileStoreAuthDeps(
+    promptClientId: () => Promise<string>,
+    client: ReturnType<typeof fakeOAuth2Client> = fakeOAuth2Client(),
+  ) {
     return {
       promptClientId,
-      createOAuth2Client: () => fakeOAuth2Client(),
+      createOAuth2Client: () => client,
       startCallbackServer: async (_redirectUri: string, expectedState: string) =>
         fakeCallbackServer("callback-code", expectedState),
       openBrowser: async () => {},
@@ -850,6 +855,111 @@ describe("FIN-78 regression: auth persistence through the real config store", ()
     });
 
     expect(readOAuth2Config()?.defaults).toEqual({ json: true, count: 25 });
+  });
+
+  // FIN-78 review blocker 1: re-auth used to replace the whole config file
+  // without the credential store lock, so its write could interleave with a
+  // concurrent refresh (clobbering mid-rotation state, or having its own
+  // freshly issued credential judged against a snapshot it never saw).
+  // Deterministic interleaving: a simulated refresh holds the store lock and
+  // persists rotated state before releasing; re-auth, started while the lock
+  // is held, must wait for it and then merge onto the FRESHEST snapshot
+  // (owning `auth`, preserving the latest `defaults`).
+  test("re-auth waits for the store lock and preserves the freshest defaults", async () => {
+    writeOAuth2Config({
+      auth: {
+        clientId: "portal-client-id",
+        accessToken: "access-A",
+        refreshToken: "refresh-A",
+        expiresAt: Date.now() + 10_000,
+        scopes: ["tweet.read"],
+      },
+      transport: "oauth2",
+      defaults: { json: false, count: 10 },
+    });
+
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const refreshHolder = withFileLock(`${configPath()}.refresh.lock`, async () => {
+      await refreshGate;
+      // The concurrent writer persists rotated auth AND newer defaults while
+      // it owns the lock (a refresh interleaved with an operator config set).
+      writeOAuth2Config({
+        auth: {
+          clientId: "portal-client-id",
+          accessToken: "access-B",
+          refreshToken: "refresh-B",
+          expiresAt: Date.now() + 10_000,
+          scopes: ["tweet.read"],
+        },
+        transport: "oauth2",
+        defaults: { json: true, count: 42 },
+      });
+    });
+
+    const authPromise = runAuth({
+      deps: fileStoreAuthDeps(() =>
+        Promise.reject(new Error("promptClientId must not run when a client ID is persisted")),
+      ),
+    });
+    await Bun.sleep(75);
+    // While the lock is held, re-auth must NOT have replaced the file yet.
+    expect(readOAuth2Config()?.auth.accessToken).toBe("access-A");
+
+    releaseRefresh();
+    await refreshHolder;
+    await authPromise;
+
+    const final = readOAuth2Config();
+    // Re-auth owns `auth`: the newly issued credential wins…
+    expect(final?.auth.refreshToken).toBe("refresh-token");
+    expect(final?.auth.clientId).toBe("portal-client-id");
+    // …but it must carry forward the freshest defaults, not the snapshot
+    // from before it started waiting.
+    expect(final?.defaults).toEqual({ json: true, count: 42 });
+  });
+
+  // FIN-78 review blocker 2: requesting offline.access does not prove X
+  // issued a refresh token. A grant with no refresh token cannot outlive its
+  // access token — reporting success and (worse) overwriting a previously
+  // refreshable config with it recreates the "session dies daily" symptom.
+  test("first auth fails without writing any config when X issues no refresh token", async () => {
+    const noRefreshClient = fakeOAuth2Client({
+      exchangeCode: async () => fakeOAuth2Token({ refresh_token: undefined }),
+    });
+
+    try {
+      await runAuth({ deps: fileStoreAuthDeps(async () => "portal-client-id", noRefreshClient) });
+      throw new Error("expected runAuth to throw when no refresh token was issued");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toContain("offline.access");
+    }
+
+    expect(existsSync(process.env.FINCH_CONFIG_PATH as string)).toBe(false);
+  });
+
+  test("re-auth without a refresh token leaves the prior config byte-for-byte intact", async () => {
+    await runAuth({ deps: fileStoreAuthDeps(async () => "portal-client-id") });
+    const configFile = process.env.FINCH_CONFIG_PATH as string;
+    const before = readFileSync(configFile, "utf8");
+
+    const noRefreshClient = fakeOAuth2Client({
+      exchangeCode: async () => fakeOAuth2Token({ refresh_token: "" }),
+    });
+    await expect(
+      runAuth({
+        deps: fileStoreAuthDeps(
+          () => Promise.reject(new Error("promptClientId must not run when a client ID is persisted")),
+          noRefreshClient,
+        ),
+      }),
+    ).rejects.toThrow("offline.access");
+
+    expect(readFileSync(configFile, "utf8")).toBe(before);
   });
 
   test("the real OAuth2 client puts offline.access (and PKCE) in the authorization URL", async () => {

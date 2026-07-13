@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ApiError, type OAuth2Token } from "@xdevplatform/xdk";
-import { ByokTransport, createOAuth2Transport, createRefreshingOAuth2Transport } from "./transport";
+import { ByokTransport, createOAuth2Transport, createRefreshingOAuth2Transport, type XTransport } from "./transport";
 import { FinchError } from "./errors";
 import { fakeTransport } from "./transport.fixtures";
 import { readOAuth2Config, writeOAuth2Config } from "./oauth2-config";
@@ -2323,6 +2323,145 @@ describe("createRefreshingOAuth2Transport", () => {
       expect((err as FinchError).message).toBe("Your session has expired — run `finch auth` to log in again.");
     }
     expect(refreshCalls).toBe(0);
+  });
+});
+
+describe("FIN-78: refresh classification through the real XDK refresh path (mocked fetch)", () => {
+  // No injected refreshFn: these tests run @xdevplatform/xdk's real
+  // OAuth2.refreshToken() against a mocked global fetch, so they pin the
+  // actual XDK error/response contract the classifier depends on. If an XDK
+  // upgrade changes its error text or token shape, these fail loudly instead
+  // of silently reclassifying a dead credential as a network problem.
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  interface CapturedTokenRequest {
+    url: string;
+    body: string;
+  }
+
+  function mockTokenEndpoint(respond: () => Response | Promise<Response>, captured?: CapturedTokenRequest[]): void {
+    globalThis.fetch = (async (url: unknown, init?: { body?: unknown }) => {
+      captured?.push({ url: String(url), body: String(init?.body ?? "") });
+      return respond();
+    }) as typeof fetch;
+  }
+
+  function expiredRefreshingTransport(persisted?: OAuth2AuthConfig[]) {
+    const config = createOAuth2AuthConfig();
+    return createRefreshingOAuth2Transport(config, {
+      nowFn: () => config.expiresAt,
+      persistFn: (persistedConfig) => {
+        persisted?.push({ ...persistedConfig });
+      },
+      buildTransportFn: () => fakeTransport({ getMe: async () => ({ id: "1", username: "x", name: "X" }) }),
+    });
+  }
+
+  async function classifiedFailure(transport: XTransport): Promise<FinchError> {
+    try {
+      await transport.getMe();
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      return err as FinchError;
+    }
+    throw new Error("expected getMe to throw");
+  }
+
+  function tokenEndpointResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  test("a 400 invalid_grant from the token endpoint is a terminal session-expired AUTH_ERROR", async () => {
+    mockTokenEndpoint(() => tokenEndpointResponse(400, { error: "invalid_grant", error_description: "revoked" }));
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("AUTH_ERROR");
+    expect(err.message).toBe("Your session has expired \u2014 run `finch auth` to log in again.");
+  });
+
+  test("a 401 invalid_client from the token endpoint is a terminal session-expired AUTH_ERROR", async () => {
+    mockTokenEndpoint(() => tokenEndpointResponse(401, { error: "invalid_client" }));
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("AUTH_ERROR");
+  });
+
+  test("a 408 from the token endpoint is retryable, not session-expired", async () => {
+    mockTokenEndpoint(() => tokenEndpointResponse(408, { title: "Request Timeout" }));
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("NETWORK_ERROR");
+  });
+
+  test("a 425 from the token endpoint is retryable, not session-expired", async () => {
+    mockTokenEndpoint(() => tokenEndpointResponse(425, { title: "Too Early" }));
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("NETWORK_ERROR");
+  });
+
+  test("a 429 from the token endpoint is retryable, not session-expired", async () => {
+    mockTokenEndpoint(() => tokenEndpointResponse(429, { title: "Too Many Requests" }));
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("NETWORK_ERROR");
+  });
+
+  test("a 503 from the token endpoint is retryable, not session-expired", async () => {
+    mockTokenEndpoint(() => tokenEndpointResponse(503, { title: "Service Unavailable" }));
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("NETWORK_ERROR");
+  });
+
+  test("a network-level fetch failure is retryable and its message never overclaims the outcome", async () => {
+    mockTokenEndpoint(() => {
+      throw new TypeError("fetch failed");
+    });
+    const err = await classifiedFailure(expiredRefreshingTransport());
+    expect(err.code).toBe("NETWORK_ERROR");
+    // The outcome is ambiguous: X may or may not have processed the refresh
+    // before the connection died, and a rotating refresh token may have been
+    // spent. The message must advise a retry without guaranteeing that the
+    // stored credential is still valid.
+    expect(err.message).toContain("retry");
+    expect(err.message).not.toContain("still valid");
+    expect(err.message).not.toContain("session has expired");
+  });
+
+  test("a successful token response persists the rotated credential and pins the public-client request shape", async () => {
+    const captured: CapturedTokenRequest[] = [];
+    const persisted: OAuth2AuthConfig[] = [];
+    mockTokenEndpoint(
+      () =>
+        tokenEndpointResponse(200, {
+          access_token: "access-xdk-rotated",
+          token_type: "bearer",
+          expires_in: 7200,
+          refresh_token: "refresh-xdk-rotated",
+          scope: "tweet.read",
+        }),
+      captured,
+    );
+
+    const transport = expiredRefreshingTransport(persisted);
+    const me = await transport.getMe();
+    expect(me.username).toBe("x");
+
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.accessToken).toBe("access-xdk-rotated");
+    expect(persisted[0]?.refreshToken).toBe("refresh-xdk-rotated");
+
+    // Public-client refresh request contract (X token endpoint): form-encoded
+    // grant_type + refresh_token + client_id (no client secret in Finch).
+    expect(captured).toHaveLength(1);
+    const request = captured[0] as CapturedTokenRequest;
+    expect(request.url).toContain("/2/oauth2/token");
+    const params = new URLSearchParams(request.body);
+    expect(params.get("grant_type")).toBe("refresh_token");
+    expect(params.get("refresh_token")).toBe("refresh-old");
+    expect(params.get("client_id")).toBe("client-123");
   });
 });
 
