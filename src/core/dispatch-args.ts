@@ -9,7 +9,7 @@ export interface ResolvedDispatchArgs {
 // positional/free-text data — an MCP tool's post/reply text, a search
 // query, a tweet id-or-URL — and per the same `--` convention parseArgs
 // enforces for every command, it must be taken literally. Global flags
-// (`--json`, `--describe`, `--version`) are only ever recognized or stripped from the
+// (`--json`, `--describe`, `--version`/`-v`) are only ever recognized or stripped from the
 // global-flags region: a literal positional value that happens to equal
 // one of those strings (e.g. post text of "--json") must never be
 // misinterpreted as the flag, and must never be silently deleted.
@@ -24,7 +24,7 @@ export function resolveDispatchArgs(argv: string[], isTTY: boolean): ResolvedDis
     return { jsonMode, args: ["schema"] };
   }
 
-  if (globalFlags.includes("--version")) {
+  if (globalFlags.includes("--version") || globalFlags.includes("-v")) {
     return { jsonMode, args: ["version"] };
   }
 

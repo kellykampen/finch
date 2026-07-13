@@ -415,7 +415,7 @@ bug, check *which binary* you're actually running — there are two independent 
 that can go stale in different ways:
 
 ```bash
-finch --version   # semver of this exact binary, baked in at build time
+finch --version   # (or `-v`) semver of this exact binary, baked in at build time
 finch --describe   # (or `finch schema`) — every command THIS binary's compiled
                     # code actually supports, regardless of what any doc says
 which finch        # confirm you're not shadowing a Homebrew install with a
