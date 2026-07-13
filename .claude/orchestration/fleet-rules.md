@@ -69,13 +69,20 @@
     regardless of generation — those two agy models are off-limits for this fleet's Gate A
     specifically, even though `agy models` lists them.
 12. **REAL CREDENTIALS ON THIS MACHINE — standing rule, every seat, every task, no exceptions
-    for "docs-only" or "just a smoke test":** `~/.finch/config` on the host `$HOME` holds the
-    CEO's real, live X API credentials. Never read it, print it, `cat` it, or let live
-    verification run against it. When "exercise your change live" (rule 5) means running the
-    compiled binary, ALWAYS do so under a sandboxed `$HOME` (e.g. `HOME=$(mktemp -d) ./finch
-    ...`) — including for read-only/harmless-seeming commands like `finch show`/`whoami`, which
-    still sign a real authenticated request with real keys if pointed at the real config. This
-    was violated twice already this project (once reading the real file's permissions during a
-    review-fix round, once making a real signed API call during a README smoke test) —
-    specifically because it was called out in some briefs and not others. It's not brief-
-    specific: it always applies.
+    for "docs-only" or "just a smoke test":** `~/.finch/config` on the host holds the CEO's
+    real, live X API credentials. Never read it, print it, `cat` it, or let live verification
+    run against it. When "exercise your change live" (rule 5) means running the compiled
+    binary, ALWAYS do so under a sandboxed `$HOME` **and** an explicit `FINCH_CONFIG_PATH`
+    pointed inside that sandbox (e.g. `SANDBOX=$(mktemp -d); HOME="$SANDBOX"
+    FINCH_CONFIG_PATH="$SANDBOX/.finch/config" ./finch ...`) — including for
+    read-only/harmless-seeming commands like `finch show`/`whoami`, which still sign a real
+    authenticated request with real keys if pointed at the real config. **FIN-77 changed what
+    "sandboxed" requires**: Finch's default config path used to resolve from `process.env.HOME`
+    directly, so `HOME=$(mktemp -d)` alone was sufficient isolation; FIN-77 fixed that default
+    to resolve to the canonical real-user home via the OS user database (immune to a caller-set
+    `$HOME`, closing the FIN-74 divergent-snapshot bug) — which means, as of FIN-77, sandbox
+    `HOME` **by itself no longer isolates the config file at all**. `FINCH_CONFIG_PATH` is now
+    the only reliable isolation mechanism; always set both. This was violated twice already this
+    project (once reading the real file's permissions during a review-fix round, once making a
+    real signed API call during a README smoke test) — specifically because it was called out
+    in some briefs and not others. It's not brief-specific: it always applies.

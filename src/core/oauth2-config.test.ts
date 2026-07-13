@@ -7,16 +7,21 @@ import { readOAuth2Config, writeOAuth2Config, type FinchOAuth2Config } from "./o
 import { FinchError } from "./errors";
 
 let fakeHome: string;
-let originalHome: string | undefined;
+let originalConfigPath: string | undefined;
 
+// FIN-77: configPath() no longer defaults from $HOME (see config.test.ts),
+// so isolation here uses the documented FINCH_CONFIG_PATH override instead
+// of spoofing HOME — spoofing HOME would now be a no-op and these tests
+// would silently read/write the real ~/.finch/config.
 beforeEach(() => {
   fakeHome = mkdtempSync(join(tmpdir(), "finch-oauth2-config-test-"));
-  originalHome = process.env.HOME;
-  process.env.HOME = fakeHome;
+  originalConfigPath = process.env.FINCH_CONFIG_PATH;
+  process.env.FINCH_CONFIG_PATH = join(fakeHome, ".finch", "config");
 });
 
 afterEach(() => {
-  process.env.HOME = originalHome;
+  if (originalConfigPath === undefined) delete process.env.FINCH_CONFIG_PATH;
+  else process.env.FINCH_CONFIG_PATH = originalConfigPath;
   rmSync(fakeHome, { recursive: true, force: true });
 });
 
@@ -31,12 +36,6 @@ const sampleOAuth2Config: FinchOAuth2Config = {
   transport: "oauth2",
   defaults: { json: false, count: 10 },
 };
-
-describe("configPath", () => {
-  test("resolves to ~/.finch/config under the current home dir", () => {
-    expect(configPath()).toBe(join(fakeHome, ".finch", "config"));
-  });
-});
 
 describe("readOAuth2Config", () => {
   test("returns null when no config file exists", () => {

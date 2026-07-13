@@ -9,11 +9,16 @@ const CLI_ENTRY = join(import.meta.dir, "index.ts");
 function runCli(args: string[]) {
   const fakeHome = mkdtempSync(join(tmpdir(), "finch-cli-test-"));
   try {
+    // FIN-77: configPath() no longer defaults from $HOME (see
+    // src/core/config.test.ts), so isolation must go through the documented
+    // FINCH_CONFIG_PATH override — spoofing HOME alone would now be a no-op
+    // and these subprocesses would read/write the real ~/.finch/config.
     const result = Bun.spawnSync({
       cmd: ["bun", "run", CLI_ENTRY, ...args],
       env: {
         ...process.env,
         HOME: fakeHome,
+        FINCH_CONFIG_PATH: join(fakeHome, ".finch", "config"),
         FINCH_API_KEY: "",
         FINCH_API_KEY_SECRET: "",
         FINCH_ACCESS_TOKEN: "",

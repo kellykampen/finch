@@ -112,19 +112,38 @@ leaving a broken config file behind. Re-running `finch auth` overwrites the stor
 credentials — there's no partial update via the wizard (use `finch config set` for
 non-secret fields; see below).
 
-If Finch is invoked by local processes that may have different `HOME` values, give all
-credential-using processes one absolute canonical path:
+**Default resolves to your real user's config, not whatever `$HOME` a caller happens to
+set (FIN-77).** Earlier versions defaulted the config/lock path from `process.env.HOME`
+directly, so two local processes launched with different `HOME` values (a common
+mis-setup for scheduled jobs, sandboxed launchers, or misconfigured shells) would each
+get routed to their own `~/.finch/config` snapshot — silently diverging, with each
+writer's token refresh invisible to the other (this was the FIN-74 recurring-re-auth
+bug). Finch now resolves its default home directory via the OS user database keyed on
+the process's real uid (`os.userInfo().username`, then a `~username` passwd-database
+lookup) instead of trusting the `HOME` environment variable, so **every default-config
+caller for the same OS user shares one canonical `~/.finch/config` and one refresh lock,
+regardless of what `HOME` each caller was launched with.** See
+`src/core/config.ts`'s `resolveCanonicalHomeDir` for the implementation and
+`src/core/config.test.ts` for a divergent-`HOME` regression test (including two real,
+concurrently-spawned processes) proving this.
 
 ```bash
-export FINCH_CONFIG_PATH="$HOME/.finch/config"
 finch config path --json  # safe: prints path metadata only, never config contents
 ```
 
+For **intentional isolation** — CI, E2B, automated tests, or any no-live smoke that must
+never touch your real credentials — set an explicit override:
+
+```bash
+export FINCH_CONFIG_PATH="/path/to/isolated/config"
+```
+
 `FINCH_CONFIG_PATH` must be absolute. It controls both the credential file and its
-adjacent refresh lock. Do not pass it into CI, E2B, or no-live smokes that intentionally
-use isolated credentials. X refresh tokens can rotate when used, so copying one config
-into multiple independently writable paths is unsafe: each writer must share the same
-latest credential and lock.
+adjacent refresh lock, and always wins over the canonical default. X refresh tokens can
+rotate when used, so copying one config into multiple independently writable paths is
+unsafe: each writer must share the same latest credential and lock — set the same
+`FINCH_CONFIG_PATH` for every isolated writer that should share one snapshot, and leave
+it unset everywhere else so real-user callers get the canonical default automatically.
 
 ```bash
 finch auth status   # {configured, valid, username} — no wizard, just a status check

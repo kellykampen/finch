@@ -9,8 +9,14 @@
 # ever point a freshly-built binary at real keys.
 #
 # HOW IT STAYS OFFLINE (by construction, not by mocking):
-#   * Every invocation runs under a throwaway sandbox HOME (`mktemp -d`), so
-#     the real `~/.finch/config` (the CEO's live X credentials) is never read.
+#   * Every invocation runs under a throwaway sandbox HOME (`mktemp -d`) AND an
+#     explicit FINCH_CONFIG_PATH pointed inside that sandbox, so the real
+#     `~/.finch/config` (the CEO's live X credentials) is never read. FIN-77
+#     made the default config path resolve to the real user's canonical
+#     `~/.finch/config` regardless of a caller-set $HOME (fixing FIN-74's
+#     divergent-snapshot bug) — which means sandboxing via HOME alone no
+#     longer isolates anything; FINCH_CONFIG_PATH is now the only reliable
+#     isolation mechanism and every sandboxed invocation below sets it.
 #   * Mutating commands (`post`, `thread`, `delete`, `article`) resolve their
 #     transport lazily: `--dry-run` returns `{dryRun:true, wouldSend:{...}}`
 #     BEFORE `getTransport()` is ever called — no config, no network.
@@ -71,8 +77,12 @@ if [ "$SOURCE_MODE" -eq 1 ]; then
   echo "         per docs/release/e2e-preflight.md) and re-run with that binary."
 fi
 echo "finch version:"
-# Version never touches auth/network; still run it under a sandbox HOME for hygiene.
-HOME="$(mktemp -d)" "${FINCH[@]}" version --json || echo "(version lookup failed)"
+# Version never touches auth/network; still run it under a sandbox HOME +
+# FINCH_CONFIG_PATH for hygiene (see FIN-77 note above on why both are needed).
+VERSION_SANDBOX="$(mktemp -d)"
+HOME="$VERSION_SANDBOX" FINCH_CONFIG_PATH="$VERSION_SANDBOX/.finch/config" \
+  "${FINCH[@]}" version --json || echo "(version lookup failed)"
+rm -rf "$VERSION_SANDBOX"
 echo ""
 
 TOTAL=0
@@ -85,6 +95,7 @@ run_finch() {
   sandbox="$(mktemp -d)"
   set +e
   HOME="$sandbox" \
+    FINCH_CONFIG_PATH="$sandbox/.finch/config" \
     FINCH_OAUTH2_CLIENT_ID="" \
     "${FINCH[@]}" "$@"
   rc=$?
@@ -215,7 +226,7 @@ check_file_thread() {
   sandbox="$(mktemp -d)"
   printf 'First post in the thread.\n\nSecond post in the thread.\n' > "$sandbox/thread.txt"
   set +e
-  out="$(HOME="$sandbox" FINCH_OAUTH2_CLIENT_ID="" "${FINCH[@]}" \
+  out="$(HOME="$sandbox" FINCH_CONFIG_PATH="$sandbox/.finch/config" FINCH_OAUTH2_CLIENT_ID="" "${FINCH[@]}" \
     thread --file "$sandbox/thread.txt" --number --dry-run --json)"
   rc=$?
   set -e
