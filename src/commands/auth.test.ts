@@ -1,8 +1,12 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runAuth, runAuthStatus, parseClientIdFlag, startLocalCallbackServer } from "./auth";
 import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import { createRefreshingOAuth2Transport } from "../core/transport";
+import { readOAuth2Config, writeOAuth2Config } from "../core/oauth2-config";
 
 import type { FinchOAuth2Config, OAuth2AuthConfig } from "../core/oauth2-config";
 import type { OAuth2Token } from "@xdevplatform/xdk";
@@ -268,6 +272,54 @@ describe("runAuth", () => {
 
     expect(result.data).toEqual({ configured: true, username: "kelly" });
     expect(written.clientId).toBe("client-id");
+  });
+
+  // FIN-78: re-auth must not silently reset non-secret operator settings.
+  // `runAuth` rewrites the whole config file on success; the CEO-reported
+  // "something is overwriting the stored config between runs" symptom class
+  // includes this: a re-auth that stomps `defaults` back to factory values.
+  test("preserves existing defaults when re-authenticating over a prior config", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { config: FinchOAuth2Config | null } = { config: null };
+
+    await runAuth({
+      deps: oauth2AuthDeps({
+        readOAuth2Config: () => ({
+          ...fakeOAuth2Config,
+          defaults: { json: true, count: 25 },
+        }),
+        promptClientId: rejectingPromptClientId(),
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.config = config;
+        },
+      }),
+    });
+
+    expect(written.config?.defaults).toEqual({ json: true, count: 25 });
+  });
+
+  // First-ever auth (no config on disk) still gets the documented factory defaults.
+  test("writes factory defaults on first auth when no config exists", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+    const written: { config: FinchOAuth2Config | null } = { config: null };
+
+    await runAuth({
+      deps: oauth2AuthDeps({
+        readOAuth2Config: () => null,
+        promptClientId: async () => "prompted-client-id",
+        createTransport: () => transport,
+        writeOAuth2Config: (config) => {
+          written.config = config;
+        },
+      }),
+    });
+
+    expect(written.config?.defaults).toEqual({ json: false, count: 10 });
   });
 
   test("prefers the --client-id flag over a persisted client ID", async () => {
@@ -689,5 +741,145 @@ describe("runAuthStatus", () => {
     expect(result.human).not.toContain("refresh");
     expect(result.human).not.toContain("access");
     expect(result.human).not.toContain("client-id");
+  });
+});
+
+// FIN-78 regression suite: the CEO-reported production failure was
+// "re-enter the Client ID on every `finch auth`" + "session dies daily".
+// Root cause was the released v0.3.0 binary predating FIN-61/62/74/77 — but
+// these tests pin the fixed behavior end-to-end through the REAL file store
+// (via the documented FINCH_CONFIG_PATH isolation override, never the real
+// ~/.finch/config), so a regression in any layer of the chain
+// (configPath → write → read → reuse → refresh-persist) fails loudly.
+describe("FIN-78 regression: auth persistence through the real config store", () => {
+  let sandbox: string;
+  let originalConfigPath: string | undefined;
+
+  beforeEach(() => {
+    sandbox = mkdtempSync(join(tmpdir(), "finch-fin78-auth-test-"));
+    originalConfigPath = process.env.FINCH_CONFIG_PATH;
+    process.env.FINCH_CONFIG_PATH = join(sandbox, ".finch", "config");
+  });
+
+  afterEach(() => {
+    if (originalConfigPath === undefined) delete process.env.FINCH_CONFIG_PATH;
+    else process.env.FINCH_CONFIG_PATH = originalConfigPath;
+    rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  // Deps that mock every network-touching seam but leave the config store
+  // real, so the persistence chain under test is the production one.
+  function fileStoreAuthDeps(promptClientId: () => Promise<string>) {
+    return {
+      promptClientId,
+      createOAuth2Client: () => fakeOAuth2Client(),
+      startCallbackServer: async (_redirectUri: string, expectedState: string) =>
+        fakeCallbackServer("callback-code", expectedState),
+      openBrowser: async () => {},
+      createTransport: () => fakeTransport({ getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }) }),
+    };
+  }
+
+  test("persists the client ID on first auth and never re-prompts on the next auth", async () => {
+    await runAuth({ deps: fileStoreAuthDeps(async () => "portal-client-id") });
+
+    const configFile = process.env.FINCH_CONFIG_PATH as string;
+    expect(existsSync(configFile)).toBe(true);
+    const persisted = readOAuth2Config();
+    expect(persisted?.auth.clientId).toBe("portal-client-id");
+    expect(persisted?.auth.refreshToken).toBe("refresh-token");
+    expect(persisted?.auth.scopes).toContain("offline.access");
+
+    // Second `finch auth`: the prompt must never fire — the CEO-reported
+    // symptom was exactly this prompt reappearing on every invocation.
+    const result = await runAuth({
+      deps: fileStoreAuthDeps(() =>
+        Promise.reject(new Error("promptClientId must not run when a client ID is persisted")),
+      ),
+    });
+    expect(result.data).toEqual({ configured: true, username: "kelly" });
+    expect(readOAuth2Config()?.auth.clientId).toBe("portal-client-id");
+  });
+
+  test("a transparent refresh rotates tokens in place without losing the client ID or defaults", async () => {
+    await runAuth({ deps: fileStoreAuthDeps(async () => "portal-client-id") });
+
+    const before = readOAuth2Config();
+    if (!before) throw new Error("expected a persisted config after auth");
+
+    // Simulate the 2-hour access-token expiry the CEO hits daily, with the
+    // default (file-backed, lock-serialized) persist path doing the write.
+    const transport = createRefreshingOAuth2Transport(before.auth, {
+      nowFn: () => before.auth.expiresAt + 1,
+      refreshFn: async () => fakeOAuth2Token({ access_token: "access-rotated", refresh_token: "refresh-rotated" }),
+      buildTransportFn: () => fakeTransport({ getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }) }),
+    });
+    await transport.getMe();
+
+    const after = readOAuth2Config();
+    expect(after?.auth.accessToken).toBe("access-rotated");
+    expect(after?.auth.refreshToken).toBe("refresh-rotated");
+    // The refresh persists a full config rewrite — nothing else may be lost.
+    expect(after?.auth.clientId).toBe("portal-client-id");
+    expect(after?.defaults).toEqual(before.defaults);
+
+    // And a later re-auth still finds the client ID — refresh cycles must
+    // never push the operator back to the interactive prompt.
+    await runAuth({
+      deps: fileStoreAuthDeps(() => Promise.reject(new Error("promptClientId must not run after refresh cycles"))),
+    });
+  });
+
+  test("re-auth over an existing config preserves operator-set defaults in the file", async () => {
+    writeOAuth2Config({
+      auth: {
+        clientId: "portal-client-id",
+        accessToken: "old-access",
+        refreshToken: "old-refresh",
+        expiresAt: Date.now() + 10_000,
+        scopes: ["tweet.read"],
+      },
+      transport: "oauth2",
+      defaults: { json: true, count: 25 },
+    });
+
+    await runAuth({
+      deps: fileStoreAuthDeps(() =>
+        Promise.reject(new Error("promptClientId must not run when a client ID is persisted")),
+      ),
+    });
+
+    expect(readOAuth2Config()?.defaults).toEqual({ json: true, count: 25 });
+  });
+
+  test("the real OAuth2 client puts offline.access (and PKCE) in the authorization URL", async () => {
+    // No createOAuth2Client override: this exercises the real
+    // @xdevplatform/xdk OAuth2 client and Finch's real scope list, aborting
+    // before any network I/O (getAuthorizationUrl is pure string-building).
+    let capturedUrl: string | null = null;
+    await expect(
+      runAuth({
+        clientId: "portal-client-id",
+        deps: {
+          openBrowser: async (url: string) => {
+            capturedUrl = url;
+          },
+          startCallbackServer: async () => ({
+            waitForCode: () => Promise.reject(new FinchError("AUTH_ERROR", "test abort before callback", null)),
+            stop: () => {},
+          }),
+        },
+      }),
+    ).rejects.toThrow("test abort before callback");
+
+    if (capturedUrl === null) throw new Error("expected runAuth to open the authorization URL");
+    const url = new URL(capturedUrl);
+    const scopes = (url.searchParams.get("scope") ?? "").split(" ");
+    // offline.access is what makes X return a refresh token at all — without
+    // it every session is a short-lived 2-hour token (FIN-78 symptom 2).
+    expect(scopes).toContain("offline.access");
+    expect(url.searchParams.get("client_id")).toBe("portal-client-id");
+    expect(url.searchParams.get("code_challenge")).toBeTruthy();
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
   });
 });

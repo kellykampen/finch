@@ -89,16 +89,34 @@ async function resolveClientId(deps: OAuth2AuthDeps): Promise<string> {
   return await (deps.promptClientId ?? promptClientIdInteractive)();
 }
 
-// Best-effort read of the stored Client ID. `finch auth` is also the recovery
+// Best-effort read of the stored config. `finch auth` is also the recovery
 // path for a legacy (pre-OAuth2) or corrupt config, both of which make
-// readOAuth2Config throw — so a failed read must fall through to the prompt
+// readOAuth2Config throw — so a failed read must degrade to "no prior config"
 // rather than break re-authentication (PLAN.md hard-cutover note).
-function readPersistedClientId(deps: OAuth2AuthDeps): string | undefined {
+function readPersistedConfig(deps: OAuth2AuthDeps): FinchOAuth2Config | null {
   try {
-    return (deps.readOAuth2Config ?? readOAuth2Config)()?.auth?.clientId || undefined;
+    return (deps.readOAuth2Config ?? readOAuth2Config)();
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+function readPersistedClientId(deps: OAuth2AuthDeps): string | undefined {
+  return readPersistedConfig(deps)?.auth?.clientId || undefined;
+}
+
+const FACTORY_DEFAULTS = { json: false, count: 10 };
+
+// Re-auth rewrites the whole config file; the operator's non-secret settings
+// must survive it. Only adopt a persisted `defaults` block that matches the
+// documented shape — the guarded read above swallows corruption, so this is
+// the last line of defense against writing a malformed block back (FIN-78).
+function persistedDefaults(deps: OAuth2AuthDeps): { json: boolean; count: number } {
+  const defaults = readPersistedConfig(deps)?.defaults;
+  if (defaults && typeof defaults.json === "boolean" && typeof defaults.count === "number") {
+    return defaults;
+  }
+  return FACTORY_DEFAULTS;
 }
 
 function createRealOAuth2Client(config: { clientId: string; redirectUri: string; scope: string[] }): OAuth2ClientLike {
@@ -249,7 +267,7 @@ export async function runAuth(options: RunAuthOptions = {}): Promise<{ data: Aut
       scopes: (token.scope ?? OAUTH2_SCOPES.join(" ")).split(" ").filter(Boolean),
     },
     transport: "oauth2",
-    defaults: { json: false, count: 10 },
+    defaults: persistedDefaults(deps),
   });
 
   return {

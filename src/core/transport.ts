@@ -12,6 +12,12 @@ const EXPIRY_BUFFER_MS = 60_000;
 // Shown when the stored refresh token is missing or X refuses to refresh it —
 // the only remaining recovery is a fresh interactive login.
 const SESSION_EXPIRED_MESSAGE = "Your session has expired — run `finch auth` to log in again.";
+// Shown when a refresh attempt never got an answer from X (offline, DNS
+// failure, X outage, 5xx). The stored refresh token was NOT spent, so the
+// session is still recoverable — the operator must retry, not re-login
+// (a needless `finch auth` also rotates the whole token family) — FIN-78.
+const REFRESH_UNREACHABLE_MESSAGE =
+  "Could not reach X to refresh your session — your stored credentials are still valid; check your connection and retry.";
 // The generic credential-rejection message from a 401/403. Reused as the
 // trigger for one reactive refresh+retry (a scope/tier error carries a
 // different, more specific message and must NOT trigger a refresh).
@@ -1245,8 +1251,8 @@ class RefreshingOAuth2Transport implements XTransport {
           : new OAuth2({ clientId: this.config.clientId, redirectUri: OAUTH2_REDIRECT_URI }).refreshToken(
               refreshToken,
             ));
-      } catch {
-        throw new FinchError("AUTH_ERROR", SESSION_EXPIRED_MESSAGE, null);
+      } catch (err) {
+        throw classifyRefreshFailure(err);
       }
 
       const now = this.deps.nowFn();
@@ -1284,6 +1290,38 @@ class RefreshingOAuth2Transport implements XTransport {
     const defaults = current?.defaults ?? { json: false, count: 10 };
     writeOAuth2Config({ auth: this.config, transport: "oauth2", defaults });
   }
+}
+
+// Matches the plain-Error message @xdevplatform/xdk's OAuth2.refreshToken()
+// throws for a non-ok token-endpoint response ("Failed to refresh token:
+// <status>, body: ..."). Pinned by the FIN-78 regression tests so an xdk
+// upgrade that changes this contract fails loudly instead of silently
+// reclassifying refresh failures.
+const XDK_REFRESH_FAILURE_STATUS = /^Failed to refresh token: (\d{3})\b/;
+
+/**
+ * Decide whether a failed refresh means "the session is gone" (X answered
+ * with a 4xx — the refresh token was rejected; only a new interactive login
+ * recovers) or "X was never reached / had a hiccup" (network error, 5xx,
+ * 429 — the stored refresh token was not spent and a plain retry recovers).
+ * A FinchError from an injected refreshFn already carries its own
+ * classification and passes through untouched (FIN-78).
+ */
+function classifyRefreshFailure(err: unknown): FinchError {
+  if (err instanceof FinchError) return err;
+
+  let status: number | null = null;
+  if (err instanceof ApiError) {
+    status = err.status;
+  } else if (err instanceof Error) {
+    const match = err.message.match(XDK_REFRESH_FAILURE_STATUS);
+    if (match) status = Number(match[1]);
+  }
+
+  if (status !== null && status >= 400 && status < 500 && status !== 429) {
+    return new FinchError("AUTH_ERROR", SESSION_EXPIRED_MESSAGE, null);
+  }
+  return new FinchError("NETWORK_ERROR", REFRESH_UNREACHABLE_MESSAGE, null);
 }
 
 function runInline<T>(fn: () => Promise<T>): Promise<T> {

@@ -2023,6 +2023,101 @@ describe("createRefreshingOAuth2Transport", () => {
     expect(apiCallMade).toBe(false);
   });
 
+  // FIN-78: a refresh attempt that never reached X (offline, DNS failure, X
+  // outage) must NOT masquerade as an expired session. The stored refresh
+  // token was not spent, so telling the operator to run `finch auth` forces a
+  // needless interactive re-login — the exact "aggressive re-prompt instead of
+  // transparent refresh" symptom. Only X actually rejecting the token (4xx
+  // from the token endpoint) means the session is gone.
+  test("maps a network failure during refresh to NETWORK_ERROR, not session-expired", async () => {
+    const config = createOAuth2AuthConfig();
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => config.expiresAt,
+      refreshFn: async () => {
+        // What fetch() throws when the network is down.
+        throw new TypeError("fetch failed");
+      },
+      persistFn: () => {},
+      buildTransportFn: () => fakeTransport({}),
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("NETWORK_ERROR");
+      expect((err as FinchError).message).not.toContain("session has expired");
+    }
+  });
+
+  test("maps an X 5xx during refresh to NETWORK_ERROR, not session-expired", async () => {
+    const config = createOAuth2AuthConfig();
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => config.expiresAt,
+      refreshFn: async () => {
+        // The exact error shape @xdevplatform/xdk's OAuth2.refreshToken()
+        // throws for a non-ok token-endpoint response.
+        throw new Error('Failed to refresh token: 503, body: "Service Unavailable"');
+      },
+      persistFn: () => {},
+      buildTransportFn: () => fakeTransport({}),
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("NETWORK_ERROR");
+    }
+  });
+
+  test("maps an xdk-shaped 400 token-endpoint rejection to session-expired", async () => {
+    const config = createOAuth2AuthConfig();
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => config.expiresAt,
+      refreshFn: async () => {
+        throw new Error('Failed to refresh token: 400, body: {"error":"invalid_request"}');
+      },
+      persistFn: () => {},
+      buildTransportFn: () => fakeTransport({}),
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("AUTH_ERROR");
+      expect((err as FinchError).message).toBe("Your session has expired — run `finch auth` to log in again.");
+    }
+  });
+
+  test("propagates a FinchError thrown by an injected refreshFn unchanged", async () => {
+    const config = createOAuth2AuthConfig();
+
+    const transport = createRefreshingOAuth2Transport(config, {
+      nowFn: () => config.expiresAt,
+      refreshFn: async () => {
+        throw new FinchError("RATE_LIMITED", "Rate limited by the X API", null);
+      },
+      persistFn: () => {},
+      buildTransportFn: () => fakeTransport({}),
+    });
+
+    try {
+      await transport.getMe();
+      throw new Error("expected getMe to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("RATE_LIMITED");
+    }
+  });
+
   describe("default persist path", () => {
     let fakeHome: string;
     let originalConfigPath: string | undefined;
