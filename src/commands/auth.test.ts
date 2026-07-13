@@ -7,7 +7,7 @@ import { FinchError } from "../core/errors";
 import { fakeTransport } from "../core/transport.fixtures";
 import { createRefreshingOAuth2Transport } from "../core/transport";
 import { readOAuth2Config, writeOAuth2Config } from "../core/oauth2-config";
-import { configPath } from "../core/config";
+import { configPath, __setCanonicalHomeForTests, __resetCanonicalHomeCacheForTests } from "../core/config";
 import { withFileLock } from "../core/refresh-lock";
 
 import type { FinchOAuth2Config, OAuth2AuthConfig } from "../core/oauth2-config";
@@ -431,6 +431,9 @@ describe("runAuth", () => {
       deps: oauth2AuthDeps({
         promptClientId: rejectingPromptClientId(),
         createTransport: () => transport,
+        // Inject a capturing writer so this successful auth never reaches the
+        // real file store (see FIN-77 config-isolation regression below).
+        writeOAuth2Config: () => {},
       }),
     });
 
@@ -447,6 +450,7 @@ describe("runAuth", () => {
       deps: oauth2AuthDeps({
         promptClientId: rejectingPromptClientId(),
         createTransport: () => transport,
+        writeOAuth2Config: () => {},
       }),
     });
 
@@ -464,6 +468,7 @@ describe("runAuth", () => {
         readEnv: (key) => (key === "FINCH_OAUTH2_CLIENT_ID" ? "env-client-id" : undefined),
         promptClientId: rejectingPromptClientId(),
         createTransport: () => transport,
+        writeOAuth2Config: () => {},
       }),
     });
 
@@ -743,6 +748,48 @@ describe("runAuthStatus", () => {
     expect(result.human).not.toContain("refresh");
     expect(result.human).not.toContain("access");
     expect(result.human).not.toContain("client-id");
+  });
+});
+
+// FIN-77 regression: a successful runAuth that resolves the client ID but does
+// NOT inject a writer falls through to the REAL file store. Before this fix,
+// such a test — run with a real $HOME and no FINCH_CONFIG_PATH — overwrote the
+// operator's live ~/.finch/config with the fixtures below (clientId
+// "env-client-id", tokens "access-token"/"refresh-token"). This replays that
+// exact shape and asserts the store now fails closed instead of persisting.
+describe("FIN-77 regression: an unisolated runAuth cannot write the real config", () => {
+  let savedConfigPath: string | undefined;
+
+  beforeEach(() => {
+    savedConfigPath = process.env.FINCH_CONFIG_PATH;
+    delete process.env.FINCH_CONFIG_PATH;
+    // Safety net: even if the guard were removed, the fallback write lands in a
+    // temp sandbox, never the operator's real ~/.finch (see config-isolation.test.ts).
+    __setCanonicalHomeForTests(mkdtempSync(join(tmpdir(), "finch-fin77-replay-")));
+  });
+
+  afterEach(() => {
+    if (savedConfigPath === undefined) delete process.env.FINCH_CONFIG_PATH;
+    else process.env.FINCH_CONFIG_PATH = savedConfigPath;
+    __resetCanonicalHomeCacheForTests();
+  });
+
+  test("a successful auth with no injected writer fails closed instead of persisting", async () => {
+    const transport = fakeTransport({
+      getMe: async () => ({ id: "1", username: "kelly", name: "Kelly" }),
+    });
+
+    await expect(
+      runAuth({
+        deps: oauth2AuthDeps({
+          readEnv: (key) => (key === "FINCH_OAUTH2_CLIENT_ID" ? "env-client-id" : undefined),
+          createTransport: () => transport,
+          // Intentionally NO writeOAuth2Config: this is the incident shape, so
+          // runAuth reaches the real store. The guard must reject before any
+          // filesystem access — nothing here ever touches the real ~/.finch.
+        }),
+      }),
+    ).rejects.toThrow(/FINCH_CONFIG_PATH is not set/);
   });
 });
 

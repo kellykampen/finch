@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
-import { configPath, CONFIG_MODE, CONFIG_DIR_MODE } from "./config";
+import { assertConfigIsolatedInTests, configPath, CONFIG_MODE, CONFIG_DIR_MODE } from "./config";
 import { withFileLock } from "./refresh-lock";
 import { FinchError } from "./errors";
 
@@ -60,6 +60,10 @@ function isLegacyConfig(parsed: unknown): boolean {
 export function readOAuth2Config(): FinchOAuth2Config | null {
   const path = configPath();
   if (!existsSync(path)) return null;
+  // The file exists: reading its contents and chmod-ing it are both real-file
+  // access. Refuse for an unisolated test run before we touch the operator's
+  // creds (guard is a no-op in production and for isolated tests).
+  assertConfigIsolatedInTests();
   const raw = readFileSync(path, "utf8");
   chmodSync(path, CONFIG_MODE);
   let parsed: unknown;
@@ -77,6 +81,7 @@ export function readOAuth2Config(): FinchOAuth2Config | null {
 }
 
 export function writeOAuth2Config(config: FinchOAuth2Config): void {
+  assertConfigIsolatedInTests();
   const path = configPath();
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
@@ -108,6 +113,10 @@ export function writeOAuth2Config(config: FinchOAuth2Config): void {
  * from before and after this change still serialize against each other.
  */
 export function withConfigStoreLock<T>(fn: () => Promise<T>): Promise<T> {
+  // Guard before touching the filesystem: this creates the store directory and
+  // a lock file next to the real config, so it is a mutation entry point too
+  // and must fail closed for an unisolated test run (see FIN-77 note above).
+  assertConfigIsolatedInTests();
   const path = configPath();
   // The lock file lives next to the config; on a first-ever auth the store
   // directory does not exist yet, so create it before taking the lock.

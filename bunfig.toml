@@ -1,0 +1,6 @@
+[test]
+# Runs before any test file. Guarantees test runs cannot touch the operator's
+# real ~/.finch/config — sets FINCH_TEST_RUNTIME and a default isolated
+# FINCH_CONFIG_PATH. See src/test-preload.ts for the full rationale (FIN-77
+# real-config-overwrite incident).
+preload = ["./src/test-preload.ts"]
