@@ -279,6 +279,15 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     endpoint: "-",
     dataShape: "{ version: string }",
   },
+  {
+    name: "help",
+    description:
+      "Print human-readable top-level usage and the supported command listing. Also available as the --help / -h global flags, and shown when finch is run with no arguments. For the full machine-readable surface (flags, endpoints, JSON shapes) prefer `finch schema`.",
+    flags: ["--json", "--help", "-h"],
+    positionals: [],
+    endpoint: "-",
+    dataShape: "{ usage: string, commands: [{ name: string, description: string }] }",
+  },
 ];
 
 /** `finch schema` / `--describe`: a single JSON document describing every command's surface. */

@@ -136,6 +136,55 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(Array.isArray(envelope.data.commands)).toBe(true);
   });
 
+  test("no arguments prints top-level help (exit 0) instead of an Unknown command error", () => {
+    const { exitCode, stdout, stderr } = runCli([]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(typeof envelope.data.usage).toBe("string");
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+    const names = envelope.data.commands.map((c: { name: string }) => c.name);
+    expect(names).toContain("post");
+    expect(names).toContain("schema");
+  });
+
+  test("finch help dispatches the help command (exit 0, JSON help document)", () => {
+    const { exitCode, stdout } = runCli(["help"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+  });
+
+  test("--help works as a global-flag alias for `finch help`", () => {
+    const { exitCode, stdout } = runCli(["--help"]);
+
+    expect(exitCode).toBe(0);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data.commands)).toBe(true);
+  });
+
+  test("-h behaves exactly like --help", () => {
+    const dashH = runCli(["-h"]);
+    const longHelp = runCli(["--help"]);
+
+    expect(dashH.exitCode).toBe(0);
+    expect(dashH.stdout).toBe(longHelp.stdout);
+  });
+
+  test("a literal '-h' positional after the `--` terminator is NOT hijacked into help output", () => {
+    const { exitCode, stdout } = runCli(["like", "--", "-h"]);
+
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(exitCode).toBe(2);
+  });
+
   test("version reports this binary's semver", () => {
     const { exitCode, stdout } = runCli(["version", "--json"]);
 

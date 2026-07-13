@@ -350,6 +350,18 @@ terminal:
   finch --describe   # same thing, as a global flag
   ```
 
+- **`finch help`** (also `--help` / `-h`, and the default for a bare `finch` with no
+  arguments) — human-readable top-level usage and the supported command listing. The
+  listing is derived from the same source as `finch schema`, so it never drifts from the
+  real command surface. Help is a *successful* invocation (exit code `0`) in every form —
+  agents should still prefer `finch schema` for the machine-readable surface:
+
+  ```bash
+  finch            # no args → prints help, exits 0 (not an "Unknown command" error)
+  finch --help
+  finch -h         # identical to --help
+  ```
+
 - **A `--` terminator** separates flags from free-text arguments, so post text or a
   search query that happens to look like a flag (`"--dry-run"` as literal post text,
   say) is never misinterpreted.
