@@ -8,11 +8,17 @@ export interface ParsedArgs {
 
 export function parseArgs(
   argv: string[],
-  flags: { valueFlags?: string[]; boolFlags?: string[]; strict?: boolean } = {},
+  flags: { valueFlags?: string[]; boolFlags?: string[]; strict?: boolean; rejectUnknownFlags?: boolean } = {},
 ): ParsedArgs {
   const valueFlags = new Set(flags.valueFlags ?? []);
   const boolFlags = new Set(flags.boolFlags ?? []);
   const strict = flags.strict ?? false;
+  // FIN-82: when set, a pre-terminator token that looks like a flag (`-x` /
+  // `--foo`) but isn't a registered value/bool flag is a hard USAGE_ERROR
+  // instead of being silently swallowed as a positional — so a typo like
+  // `finch search --limit 5` fails loudly. Positionals after `--`, and a lone
+  // `-`, are never treated as flags, so MCP/free-text passthrough is preserved.
+  const rejectUnknownFlags = flags.rejectUnknownFlags ?? false;
   const values: Record<string, string> = {};
   const bools: Record<string, boolean> = {};
   const positionals: string[] = [];
@@ -30,6 +36,18 @@ export function parseArgs(
     if (!sawTerminator && arg === "--") {
       sawTerminator = true;
       continue;
+    }
+    // FIN-82: `--flag=value` syntax for a registered value flag (the
+    // space-separated `--flag value` form is still handled below). Only a
+    // registered value flag is split here; an unknown `--foo=bar` falls
+    // through to the unknown-flag / positional handling.
+    if (!sawTerminator && arg.startsWith("--") && arg.includes("=")) {
+      const eq = arg.indexOf("=");
+      const name = arg.slice(0, eq);
+      if (valueFlags.has(name)) {
+        values[name] = arg.slice(eq + 1);
+        continue;
+      }
     }
     if (!sawTerminator && valueFlags.has(arg)) {
       const value = argv[i + 1];
@@ -51,10 +69,33 @@ export function parseArgs(
       bools[arg] = true;
       continue;
     }
+    // FIN-82: an unrecognized flag-looking token (not a lone `-`) is a usage
+    // error, not a silent positional. Only applies before the `--` terminator.
+    if (!sawTerminator && rejectUnknownFlags && arg.startsWith("-") && arg !== "-") {
+      throw new FinchError("USAGE_ERROR", `Unknown flag: ${arg}`);
+    }
     positionals.push(arg);
   }
 
   return { values, bools, positionals };
+}
+
+// FIN-82: rewrite `--flag=value` into `--flag`, `value` for the named flags, so
+// an order-sensitive manual collector (post/thread `--media`/`--alt`, which
+// parseArgs can't model because they're repeatable and index-aligned) accepts
+// the same `=`-syntax parseArgs now supports for every other value flag.
+// Non-matching tokens pass through unchanged.
+export function expandEqSyntax(tokens: string[], flags: string[]): string[] {
+  const out: string[] = [];
+  for (const token of tokens) {
+    const flag = flags.find((f) => token.startsWith(`${f}=`));
+    if (flag !== undefined) {
+      out.push(flag, token.slice(flag.length + 1));
+    } else {
+      out.push(token);
+    }
+  }
+  return out;
 }
 
 const DEFAULT_COUNT = 10;

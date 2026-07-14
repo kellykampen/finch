@@ -3,7 +3,7 @@ import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { FinchError } from "../core/errors";
 import { validatePostText } from "../core/validation";
 import { extractTweetId } from "../core/ids";
-import { parseArgs } from "../core/args";
+import { parseArgs, expandEqSyntax } from "../core/args";
 import { planMediaUploads, uploadMedia } from "./post";
 
 export interface ThreadResult {
@@ -157,14 +157,10 @@ function parseThreadArgs(argv: string[]): ParsedThreadArgs {
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
+    rejectUnknownFlags: true,
     valueFlags: ["--file", "--delimiter", "--continue", "--media", "--alt"],
     boolFlags: ["--dry-run", "--number", "--help", "-h"],
   });
-
-  const unknownFlag = positionals.find((p) => p.startsWith("-"));
-  if (unknownFlag !== undefined) {
-    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
-  }
 
   return {
     values,
@@ -178,7 +174,10 @@ function parseThreadArgs(argv: string[]): ParsedThreadArgs {
 
 function collectThreadMediaWithAlt(argv: string[]): Map<number, { media: string[]; alt: (string | undefined)[] }> {
   const terminatorIndex = argv.indexOf("--");
-  const flagRegion = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
+  const preTerminator = terminatorIndex === -1 ? argv : argv.slice(0, terminatorIndex);
+  // Accept `--media=<v>` / `--alt=<v>` too (FIN-82 =-syntax), normalized to the
+  // space form this index-aligned collector already handles.
+  const flagRegion = expandEqSyntax(preTerminator, ["--media", "--alt"]);
   const byIndex = new Map<number, { media: string[]; alt: (string | undefined)[] }>();
   const lastMediaIndexByTweetIndex = new Map<number, number>();
 

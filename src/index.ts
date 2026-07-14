@@ -31,7 +31,18 @@ import { runSchema } from "./commands/schema";
 import { runSkills } from "./commands/skills";
 import { runHelp } from "./commands/help";
 import { resolveDispatchArgs } from "./core/dispatch-args";
+import { parseArgs } from "./core/args";
 import { runMcp } from "./mcp/server";
+
+// FIN-82: the argument-less commands (auth status, whoami, schema, version)
+// take no flags of their own, so validate that no unrecognized flag was passed
+// before running them — otherwise `finch whoami --bogus` would silently ignore
+// the typo and still hit the network. `help` is deliberately exempt (it is the
+// usage command; erroring on input defeats its purpose) and `mcp` is exempt
+// (an agent-invoked long-lived server-start path, not a human flag surface).
+function rejectUnknownFlags(argv: string[]): void {
+  parseArgs(argv, { rejectUnknownFlags: true });
+}
 
 async function dispatch(args: string[]): Promise<{ data: unknown; human: string }> {
   const [cmd, sub] = args;
@@ -43,6 +54,7 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runHelp();
   }
   if (cmd === "auth" && sub === "status") {
+    rejectUnknownFlags(args.slice(2));
     return runAuthStatus();
   }
   if (cmd === "auth") {
@@ -51,6 +63,7 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runAuth({ clientId: parseClientIdFlag(authArgs) });
   }
   if (cmd === "whoami") {
+    rejectUnknownFlags(args.slice(1));
     return runWhoami();
   }
   if (cmd === "post") {
@@ -135,13 +148,34 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runSkills(args.slice(1));
   }
   if (cmd === "schema") {
+    rejectUnknownFlags(args.slice(1));
     return runSchema();
   }
   if (cmd === "version") {
+    rejectUnknownFlags(args.slice(1));
     return runVersion();
   }
 
   throw new FinchError("USAGE_ERROR", `Unknown command: ${args.join(" ") || "(none)"}`);
+}
+
+/** Emit a FinchError in the requested format and exit with its mapped code. */
+function reportError(err: unknown, jsonMode: boolean): never {
+  const finchError =
+    err instanceof FinchError
+      ? err
+      : new FinchError("INTERNAL_ERROR", err instanceof Error ? err.message : String(err));
+  if (jsonMode) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: { code: finchError.code, message: finchError.message, detail: finchError.detail },
+      }),
+    );
+  } else {
+    console.error(`Error: ${finchError.message}`);
+  }
+  process.exit(exitCodeForError(finchError.code));
 }
 
 async function main(): Promise<void> {
@@ -150,8 +184,15 @@ async function main(): Promise<void> {
   // `finch mcp` starts a long-lived stdio server instead of the normal
   // dispatch-one-command-and-exit flow — it never reaches the JSON/exit-code
   // envelope below, since MCP has its own JSON-RPC framing over the same
-  // stdio streams.
+  // stdio streams. Still validate its flags first: a typo'd `finch mcp --bogus`
+  // must be a USAGE_ERROR, not a silently-started server (FIN-82 review). MCP
+  // is a machine/agent interface, so report the error as JSON.
   if (argv[0] === "mcp") {
+    try {
+      rejectUnknownFlags(argv.slice(1));
+    } catch (err) {
+      reportError(err, true);
+    }
     await runMcp();
     return;
   }
@@ -174,22 +215,7 @@ async function main(): Promise<void> {
     }
     process.exit(0);
   } catch (err) {
-    const finchError =
-      err instanceof FinchError
-        ? err
-        : new FinchError("INTERNAL_ERROR", err instanceof Error ? err.message : String(err));
-
-    if (jsonMode) {
-      console.log(
-        JSON.stringify({
-          ok: false,
-          error: { code: finchError.code, message: finchError.message, detail: finchError.detail },
-        }),
-      );
-    } else {
-      console.error(`Error: ${finchError.message}`);
-    }
-    process.exit(exitCodeForError(finchError.code));
+    reportError(err, jsonMode);
   }
 }
 

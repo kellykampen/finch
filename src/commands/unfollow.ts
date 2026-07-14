@@ -24,7 +24,7 @@ export async function runUnfollow(
 ): Promise<{ data: UnfollowResult | UnfollowDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"], rejectUnknownFlags: true });
   const usernameArg = positionals[0];
   if (!usernameArg) {
     throw new FinchError("USAGE_ERROR", "finch unfollow requires <username>");

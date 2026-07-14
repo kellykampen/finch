@@ -135,7 +135,7 @@ export async function runConfigGet(
 ): Promise<{ data: ConfigKeyValue; human: string }> {
   const readConfigFn = deps.readConfig ?? readOAuth2Config;
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const key = positionals[0];
   if (!key) {
     throw new FinchError("USAGE_ERROR", "finch config get requires <key>");
@@ -164,7 +164,7 @@ export async function runConfigSet(
   const usingFileStore = !deps.readConfig && !deps.writeConfig;
   const runExclusive = deps.runExclusive ?? (usingFileStore ? withConfigStoreLock : runInline);
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const [key, value] = positionals;
   if (!key || value === undefined) {
     throw new FinchError("USAGE_ERROR", "finch config set requires <key> <value>");
@@ -192,9 +192,11 @@ function runInline<T>(fn: () => Promise<T>): Promise<T> {
 
 /** `finch config path`: prints the resolved `~/.finch/config` path. */
 export async function runConfigPath(
-  _argv: string[],
+  argv: string[],
   deps: ConfigDeps = {},
 ): Promise<{ data: { path: string }; human: string }> {
+  // Takes no flags; reject a typo'd one instead of silently ignoring it (FIN-82).
+  parseArgs(argv, { rejectUnknownFlags: true });
   const configPathFn = deps.configPath ?? configPath;
   const path = configPathFn();
   return { data: { path }, human: path };

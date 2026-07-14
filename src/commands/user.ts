@@ -11,7 +11,7 @@ export interface UserDeps {
 export async function runUser(argv: string[], deps: UserDeps = {}): Promise<{ data: FinchUserProfile; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const usernameArg = positionals[0];
   if (!usernameArg) {
     throw new FinchError("USAGE_ERROR", "finch user requires <username>");

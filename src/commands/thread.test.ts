@@ -348,6 +348,24 @@ describe("runThread", () => {
     ]);
   });
 
+  // FIN-82 review: the =-syntax must reach the index-aligned thread collector,
+  // including a value with an embedded ':' (and preserving any '=' in the value).
+  test("--media=<n>:<path> (=-syntax) attaches media to the tweet at index n", async () => {
+    const createTweetCalls: Array<{ text: string; replyToId?: string; mediaIds?: string[] }> = [];
+    const transport = fakeTransport({
+      uploadImage: async (path) => ({ media_id: `id-for-${path}` }),
+      createTweet: async (text, replyToId, mediaIds) => {
+        createTweetCalls.push({ text, replyToId, mediaIds });
+        return { id: String(createTweetCalls.length), text };
+      },
+    });
+
+    const result = await runThread(["first", "second", "--media=1:pic.png"], { getTransport: () => transport });
+
+    expect(result.data).toEqual({ ids: ["1", "2"], count: 2 });
+    expect(createTweetCalls[1]?.mediaIds).toEqual(["id-for-pic.png"]);
+  });
+
   test("--media can attach media to multiple different tweets in a thread", async () => {
     const createTweetCalls: Array<{ text: string; replyToId?: string; mediaIds?: string[] }> = [];
     const transport = fakeTransport({

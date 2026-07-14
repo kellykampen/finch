@@ -24,7 +24,7 @@ export async function runUnlike(
 ): Promise<{ data: UnlikeResult | UnlikeDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"], rejectUnknownFlags: true });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch unlike requires <id-or-url>");

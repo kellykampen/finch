@@ -110,6 +110,44 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(envelope.error.message).toContain("--client-id");
   });
 
+  // FIN-82: an unrecognized flag on any command errors (before any network),
+  // instead of being silently swallowed as a positional.
+  test("an unrecognized flag on a command is rejected (FIN-82)", () => {
+    const { exitCode, stdout } = runCli(["delete", "1234567890", "--bogus", "--json"]);
+    expect(exitCode).toBe(2);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.message).toContain("--bogus");
+  });
+
+  // FIN-82 review: the argument-less commands also reject unknown flags.
+  for (const cmd of [["whoami"], ["version"], ["schema"], ["auth", "status"]]) {
+    test(`'${cmd.join(" ")}' rejects an unrecognized flag`, () => {
+      const { exitCode, stdout } = runCli([...cmd, "--bogus", "--json"]);
+      expect(exitCode).toBe(2);
+      expect(JSON.parse(stdout).error.code).toBe("USAGE_ERROR");
+    });
+  }
+
+  // `help` is deliberately exempt — it is the usage command, so it shows help
+  // rather than erroring on unexpected input.
+  test("help is lenient with unknown flags (intentional exception)", () => {
+    const { exitCode, stdout } = runCli(["help", "--bogus", "--json"]);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout).ok).toBe(true);
+  });
+
+  // FIN-82 review: `finch mcp --bogus` must error before starting the server
+  // (this errors and exits, so it does not hang on a long-lived server).
+  test("mcp rejects an unrecognized flag before starting the server", () => {
+    const { exitCode, stdout } = runCli(["mcp", "--bogus"]);
+    expect(exitCode).toBe(2);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+  });
+
   test("config path prints the resolved path without requiring a config file", () => {
     const { exitCode, stdout } = runCli(["config", "path", "--json"]);
 

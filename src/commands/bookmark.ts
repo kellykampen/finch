@@ -21,8 +21,12 @@ export async function runBookmarkList(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const getConfig = deps.getConfig ?? readOAuth2Config;
 
-  const transport = getTransport();
-  const me = await transport.getMe();
+  // Parse AND fully validate flags (including the count value) BEFORE any
+  // network/auth, so a typo'd flag OR a bad count value is a clean USAGE_ERROR
+  // rather than triggering a live request (FIN-82 review). getConfig() is a
+  // local file read, so computing the default here stays off the network.
+  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"], rejectUnknownFlags: true });
+  const folderId = values["--folder"];
 
   const config = getConfig();
   const configuredDefault = config?.defaults?.count;
@@ -31,10 +35,11 @@ export async function runBookmarkList(
       ? Math.min(configuredDefault, MAX_COUNT)
       : DEFAULT_COUNT;
 
-  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"] });
   const countFlag = values["-n"] !== undefined ? "-n" : "--count";
   const count = resolveCount(values["-n"] ?? values["--count"], defaultCount, countFlag);
-  const folderId = values["--folder"];
+
+  const transport = getTransport();
+  const me = await transport.getMe();
 
   const posts = folderId
     ? await transport.listBookmarksInFolder(me.id, folderId, count)
@@ -66,6 +71,7 @@ export async function runBookmarkAdd(
   const { bools, positionals, values } = parseArgs(argv, {
     boolFlags: ["--dry-run"],
     valueFlags: ["--folder"],
+    rejectUnknownFlags: true,
   });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
@@ -105,7 +111,7 @@ export async function runBookmarkRemove(
 ): Promise<{ data: BookmarkStatusResult | BookmarkDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"], rejectUnknownFlags: true });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch bookmark rm requires <id-or-url>");
@@ -136,10 +142,13 @@ function formatBookmarkFolders(folders: FinchBookmarkFolder[]): string {
 
 /** `finch bookmark folders`: list the authenticated user's bookmark folders. */
 export async function runBookmarkFolders(
-  _argv: string[],
+  argv: string[],
   deps: BookmarkFoldersDeps = {},
 ): Promise<{ data: { folders: FinchBookmarkFolder[] }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
+
+  // Takes no flags; reject a typo'd one before any network/auth (FIN-82).
+  parseArgs(argv, { rejectUnknownFlags: true });
 
   const transport = getTransport();
   const me = await transport.getMe();
@@ -159,7 +168,7 @@ export async function runBookmarkFolderNew(
 ): Promise<{ data: { folder: FinchBookmarkFolder }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const name = positionals[0];
   if (!name) {
     throw new FinchError("USAGE_ERROR", "finch bookmark folder new requires <name>");

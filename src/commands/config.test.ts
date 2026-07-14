@@ -212,6 +212,13 @@ describe("runConfigPath", () => {
     const result = await runConfigPath([], { configPath: () => "/home/fake/.finch/config" });
     expect(result.data).toEqual({ path: "/home/fake/.finch/config" });
   });
+
+  // FIN-82 review: config path takes no flags — reject a typo'd one.
+  test("rejects an unrecognized flag", async () => {
+    await expect(runConfigPath(["--bogus"], { configPath: () => "/x" })).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+    });
+  });
 });
 
 // FIN-78 review blocker 1: `config set` used to read a whole-config snapshot
