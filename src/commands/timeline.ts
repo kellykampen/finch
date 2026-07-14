@@ -13,7 +13,7 @@ export async function runTimeline(
 ): Promise<{ data: { posts: FinchTweet[] }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { values } = parseArgs(argv, { valueFlags: ["-n"] });
+  const { values } = parseArgs(argv, { valueFlags: ["-n"], rejectUnknownFlags: true });
   const count = resolveCount(values["-n"]);
 
   const transport = getTransport();

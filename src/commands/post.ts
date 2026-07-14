@@ -61,14 +61,10 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
+    rejectUnknownFlags: true,
     valueFlags: ["--file", "--media", "--alt"],
     boolFlags: ["--help", "-h", "--dry-run"],
   });
-
-  const unknownFlag = positionals.find((p) => p.startsWith("-"));
-  if (unknownFlag !== undefined) {
-    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
-  }
 
   const mediaWithAlt = collectMediaWithAlt(flagRegion);
 

@@ -98,3 +98,45 @@ describe("resolveCount", () => {
     expect(resolveCount("25", 7)).toBe(25);
   });
 });
+
+// FIN-82: reject unrecognized flags across commands, with =-syntax support.
+describe("parseArgs rejectUnknownFlags + =-syntax", () => {
+  test("throws USAGE_ERROR on an unrecognized flag when rejectUnknownFlags is set", () => {
+    expect(() => parseArgs(["q", "--limit", "5"], { valueFlags: ["-n"], rejectUnknownFlags: true })).toThrow(
+      /Unknown flag: --limit/,
+    );
+    expect(() => parseArgs(["-x"], { rejectUnknownFlags: true })).toThrow(/Unknown flag: -x/);
+  });
+
+  test("accepts registered value/bool flags and positionals", () => {
+    const result = parseArgs(["q", "-n", "5"], { valueFlags: ["-n"], rejectUnknownFlags: true });
+    expect(result.values["-n"]).toBe("5");
+    expect(result.positionals).toEqual(["q"]);
+  });
+
+  test("does not reject when rejectUnknownFlags is off (back-compat)", () => {
+    expect(parseArgs(["--whatever"]).positionals).toEqual(["--whatever"]);
+  });
+
+  test("preserves the -- terminator: a flag-looking token after it is a positional, not rejected", () => {
+    const result = parseArgs(["--", "--limit", "5"], { rejectUnknownFlags: true });
+    expect(result.positionals).toEqual(["--limit", "5"]);
+  });
+
+  test("never rejects a lone '-'", () => {
+    expect(parseArgs(["-"], { rejectUnknownFlags: true }).positionals).toEqual(["-"]);
+  });
+
+  test("supports --flag=value syntax for a registered value flag", () => {
+    const result = parseArgs(["--count=25"], { valueFlags: ["--count"], rejectUnknownFlags: true });
+    expect(result.values["--count"]).toBe("25");
+    // a value containing '=' is kept intact (split on the first '=')
+    expect(parseArgs(["--q=a=b"], { valueFlags: ["--q"] }).values["--q"]).toBe("a=b");
+  });
+
+  test("rejects an unknown --flag=value when rejectUnknownFlags is set", () => {
+    expect(() => parseArgs(["--bogus=1"], { valueFlags: ["--count"], rejectUnknownFlags: true })).toThrow(
+      /Unknown flag: --bogus=1/,
+    );
+  });
+});

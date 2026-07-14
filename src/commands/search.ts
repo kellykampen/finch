@@ -14,7 +14,7 @@ export async function runSearch(
 ): Promise<{ data: { posts: FinchTweet[] }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { values, positionals } = parseArgs(argv, { valueFlags: ["-n"] });
+  const { values, positionals } = parseArgs(argv, { valueFlags: ["-n"], rejectUnknownFlags: true });
   const query = positionals[0];
   if (!query) {
     throw new FinchError("USAGE_ERROR", "finch search requires <query>");

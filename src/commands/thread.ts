@@ -157,14 +157,10 @@ function parseThreadArgs(argv: string[]): ParsedThreadArgs {
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
+    rejectUnknownFlags: true,
     valueFlags: ["--file", "--delimiter", "--continue", "--media", "--alt"],
     boolFlags: ["--dry-run", "--number", "--help", "-h"],
   });
-
-  const unknownFlag = positionals.find((p) => p.startsWith("-"));
-  if (unknownFlag !== undefined) {
-    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
-  }
 
   return {
     values,

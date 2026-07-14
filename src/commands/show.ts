@@ -11,7 +11,7 @@ export interface ShowDeps {
 export async function runShow(argv: string[], deps: ShowDeps = {}): Promise<{ data: FinchTweet; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch show requires <id-or-url>");

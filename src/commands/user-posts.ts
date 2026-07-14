@@ -15,7 +15,7 @@ export async function runUserPosts(
 ): Promise<{ data: { posts: FinchTweet[] }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { values, positionals } = parseArgs(argv, { valueFlags: ["-n"] });
+  const { values, positionals } = parseArgs(argv, { valueFlags: ["-n"], rejectUnknownFlags: true });
   const usernameArg = positionals[0];
   if (!usernameArg) {
     throw new FinchError("USAGE_ERROR", "finch user-posts requires <username>");

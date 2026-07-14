@@ -110,6 +110,17 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(envelope.error.message).toContain("--client-id");
   });
 
+  // FIN-82: an unrecognized flag on any command errors (before any network),
+  // instead of being silently swallowed as a positional.
+  test("an unrecognized flag on a command is rejected (FIN-82)", () => {
+    const { exitCode, stdout } = runCli(["delete", "1234567890", "--bogus", "--json"]);
+    expect(exitCode).toBe(2);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.message).toContain("--bogus");
+  });
+
   test("config path prints the resolved path without requiring a config file", () => {
     const { exitCode, stdout } = runCli(["config", "path", "--json"]);
 

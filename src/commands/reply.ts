@@ -26,7 +26,7 @@ export async function runReply(
 ): Promise<{ data: ReplyResult | ReplyDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"], rejectUnknownFlags: true });
   const [idOrUrl, text] = positionals;
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch reply requires <id-or-url> and <text>");

@@ -77,15 +77,11 @@ export async function runArticleDraft(
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
+    rejectUnknownFlags: true,
     valueFlags: ["--cover"],
     boolFlags: ["--dry-run"],
     strict: true,
   });
-
-  const unknownFlag = positionals.find((p) => p.startsWith("-"));
-  if (unknownFlag !== undefined) {
-    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
-  }
 
   const allPositionals = [...positionals, ...literalRegion];
 
@@ -123,14 +119,10 @@ export async function runArticlePublish(
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { bools, positionals } = parseArgs(flagRegion, {
+    rejectUnknownFlags: true,
     valueFlags: [],
     boolFlags: ["--dry-run"],
   });
-
-  const unknownFlag = positionals.find((p) => p.startsWith("-"));
-  if (unknownFlag !== undefined) {
-    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
-  }
 
   const allPositionals = [...positionals, ...literalRegion];
   const draftId = allPositionals[0];
@@ -168,15 +160,11 @@ export async function runArticlePost(
   const literalRegion = terminatorIndex === -1 ? [] : argv.slice(terminatorIndex + 1);
 
   const { values, bools, positionals } = parseArgs(flagRegion, {
+    rejectUnknownFlags: true,
     valueFlags: ["--title", "--cover"],
     boolFlags: ["--dry-run"],
     strict: true,
   });
-
-  const unknownFlag = positionals.find((p) => p.startsWith("-"));
-  if (unknownFlag !== undefined) {
-    throw new FinchError("USAGE_ERROR", `Unknown flag: ${unknownFlag}`);
-  }
 
   const allPositionals = [...positionals, ...literalRegion];
   const markdownPath = allPositionals[0];

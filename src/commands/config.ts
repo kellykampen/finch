@@ -135,7 +135,7 @@ export async function runConfigGet(
 ): Promise<{ data: ConfigKeyValue; human: string }> {
   const readConfigFn = deps.readConfig ?? readOAuth2Config;
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const key = positionals[0];
   if (!key) {
     throw new FinchError("USAGE_ERROR", "finch config get requires <key>");
@@ -164,7 +164,7 @@ export async function runConfigSet(
   const usingFileStore = !deps.readConfig && !deps.writeConfig;
   const runExclusive = deps.runExclusive ?? (usingFileStore ? withConfigStoreLock : runInline);
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const [key, value] = positionals;
   if (!key || value === undefined) {
     throw new FinchError("USAGE_ERROR", "finch config set requires <key> <value>");

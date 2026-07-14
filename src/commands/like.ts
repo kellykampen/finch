@@ -24,7 +24,7 @@ export async function runLike(
 ): Promise<{ data: LikeResult | LikeDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"], rejectUnknownFlags: true });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch like requires <id-or-url>");

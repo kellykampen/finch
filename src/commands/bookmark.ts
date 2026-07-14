@@ -31,7 +31,7 @@ export async function runBookmarkList(
       ? Math.min(configuredDefault, MAX_COUNT)
       : DEFAULT_COUNT;
 
-  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"] });
+  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"], rejectUnknownFlags: true });
   const countFlag = values["-n"] !== undefined ? "-n" : "--count";
   const count = resolveCount(values["-n"] ?? values["--count"], defaultCount, countFlag);
   const folderId = values["--folder"];
@@ -66,6 +66,7 @@ export async function runBookmarkAdd(
   const { bools, positionals, values } = parseArgs(argv, {
     boolFlags: ["--dry-run"],
     valueFlags: ["--folder"],
+    rejectUnknownFlags: true,
   });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
@@ -105,7 +106,7 @@ export async function runBookmarkRemove(
 ): Promise<{ data: BookmarkStatusResult | BookmarkDryRunResult; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"] });
+  const { bools, positionals } = parseArgs(argv, { boolFlags: ["--dry-run"], rejectUnknownFlags: true });
   const idOrUrl = positionals[0];
   if (!idOrUrl) {
     throw new FinchError("USAGE_ERROR", "finch bookmark rm requires <id-or-url>");
@@ -159,7 +160,7 @@ export async function runBookmarkFolderNew(
 ): Promise<{ data: { folder: FinchBookmarkFolder }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
 
-  const { positionals } = parseArgs(argv);
+  const { positionals } = parseArgs(argv, { rejectUnknownFlags: true });
   const name = positionals[0];
   if (!name) {
     throw new FinchError("USAGE_ERROR", "finch bookmark folder new requires <name>");
