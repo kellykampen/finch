@@ -271,6 +271,15 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     dataShape: "{ commands: CommandSchemaEntry[] }",
   },
   {
+    name: "skills",
+    description:
+      "List Finch's self-describing agent skill(s); `finch skills <name>` prints that skill's full SKILL.md. The CLI counterpart of the MCP `skills` tool — both read the same source, so an agent can learn how/when to use Finch from either surface.",
+    flags: ["--json"],
+    positionals: ["[skill-name]"],
+    endpoint: "local: reads the finch skill's SKILL.md (no network)",
+    dataShape: "{ skills: [{ name, description }] } | { name, content: string }",
+  },
+  {
     name: "version",
     description:
       "Report the semver of this exact binary — check this (and `finch schema`) before assuming an 'unknown command' error is a bug rather than a stale local build or an out-of-date Homebrew install. Also available as the --version / -v global flag.",
