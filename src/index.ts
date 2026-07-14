@@ -159,14 +159,40 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   throw new FinchError("USAGE_ERROR", `Unknown command: ${args.join(" ") || "(none)"}`);
 }
 
+/** Emit a FinchError in the requested format and exit with its mapped code. */
+function reportError(err: unknown, jsonMode: boolean): never {
+  const finchError =
+    err instanceof FinchError
+      ? err
+      : new FinchError("INTERNAL_ERROR", err instanceof Error ? err.message : String(err));
+  if (jsonMode) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        error: { code: finchError.code, message: finchError.message, detail: finchError.detail },
+      }),
+    );
+  } else {
+    console.error(`Error: ${finchError.message}`);
+  }
+  process.exit(exitCodeForError(finchError.code));
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
 
   // `finch mcp` starts a long-lived stdio server instead of the normal
   // dispatch-one-command-and-exit flow — it never reaches the JSON/exit-code
   // envelope below, since MCP has its own JSON-RPC framing over the same
-  // stdio streams.
+  // stdio streams. Still validate its flags first: a typo'd `finch mcp --bogus`
+  // must be a USAGE_ERROR, not a silently-started server (FIN-82 review). MCP
+  // is a machine/agent interface, so report the error as JSON.
   if (argv[0] === "mcp") {
+    try {
+      rejectUnknownFlags(argv.slice(1));
+    } catch (err) {
+      reportError(err, true);
+    }
     await runMcp();
     return;
   }
@@ -189,22 +215,7 @@ async function main(): Promise<void> {
     }
     process.exit(0);
   } catch (err) {
-    const finchError =
-      err instanceof FinchError
-        ? err
-        : new FinchError("INTERNAL_ERROR", err instanceof Error ? err.message : String(err));
-
-    if (jsonMode) {
-      console.log(
-        JSON.stringify({
-          ok: false,
-          error: { code: finchError.code, message: finchError.message, detail: finchError.detail },
-        }),
-      );
-    } else {
-      console.error(`Error: ${finchError.message}`);
-    }
-    process.exit(exitCodeForError(finchError.code));
+    reportError(err, jsonMode);
   }
 }
 

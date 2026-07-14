@@ -138,6 +138,16 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(JSON.parse(stdout).ok).toBe(true);
   });
 
+  // FIN-82 review: `finch mcp --bogus` must error before starting the server
+  // (this errors and exits, so it does not hang on a long-lived server).
+  test("mcp rejects an unrecognized flag before starting the server", () => {
+    const { exitCode, stdout } = runCli(["mcp", "--bogus"]);
+    expect(exitCode).toBe(2);
+    const envelope = JSON.parse(stdout);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+  });
+
   test("config path prints the resolved path without requiring a config file", () => {
     const { exitCode, stdout } = runCli(["config", "path", "--json"]);
 
