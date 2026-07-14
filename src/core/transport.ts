@@ -691,12 +691,21 @@ export class ByokTransport implements XTransport {
       throw new FinchError("CLIENT_ERROR", "X SDK client does not expose article draft creation", null);
     }
 
-    const body: { title: string; content_state: object; cover_media?: { media_id: string } } = {
+    const body: {
+      title: string;
+      content_state: object;
+      cover_media?: { media_id: string; media_category: string };
+    } = {
       title,
       content_state: contentState,
     };
     if (coverMediaId !== undefined) {
-      body.cover_media = { media_id: coverMediaId };
+      // FIN-84: X's /2/articles/draft endpoint requires `media_category` on
+      // cover_media (undocumented; confirmed by a live 400: "$.cover_media
+      // .media_category: is missing but it is required"). The cover is uploaded
+      // through uploadImage(), which categorizes static images as "tweet_image"
+      // (see the image-upload path), so the draft must echo that same category.
+      body.cover_media = { media_id: coverMediaId, media_category: "tweet_image" };
     }
 
     try {
