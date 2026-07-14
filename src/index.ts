@@ -31,7 +31,18 @@ import { runSchema } from "./commands/schema";
 import { runSkills } from "./commands/skills";
 import { runHelp } from "./commands/help";
 import { resolveDispatchArgs } from "./core/dispatch-args";
+import { parseArgs } from "./core/args";
 import { runMcp } from "./mcp/server";
+
+// FIN-82: the argument-less commands (auth status, whoami, schema, version)
+// take no flags of their own, so validate that no unrecognized flag was passed
+// before running them — otherwise `finch whoami --bogus` would silently ignore
+// the typo and still hit the network. `help` is deliberately exempt (it is the
+// usage command; erroring on input defeats its purpose) and `mcp` is exempt
+// (an agent-invoked long-lived server-start path, not a human flag surface).
+function rejectUnknownFlags(argv: string[]): void {
+  parseArgs(argv, { rejectUnknownFlags: true });
+}
 
 async function dispatch(args: string[]): Promise<{ data: unknown; human: string }> {
   const [cmd, sub] = args;
@@ -43,6 +54,7 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runHelp();
   }
   if (cmd === "auth" && sub === "status") {
+    rejectUnknownFlags(args.slice(2));
     return runAuthStatus();
   }
   if (cmd === "auth") {
@@ -51,6 +63,7 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runAuth({ clientId: parseClientIdFlag(authArgs) });
   }
   if (cmd === "whoami") {
+    rejectUnknownFlags(args.slice(1));
     return runWhoami();
   }
   if (cmd === "post") {
@@ -135,9 +148,11 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
     return runSkills(args.slice(1));
   }
   if (cmd === "schema") {
+    rejectUnknownFlags(args.slice(1));
     return runSchema();
   }
   if (cmd === "version") {
+    rejectUnknownFlags(args.slice(1));
     return runVersion();
   }
 

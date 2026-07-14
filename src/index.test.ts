@@ -121,6 +121,23 @@ describe("finch CLI arg parsing / exit codes", () => {
     expect(envelope.error.message).toContain("--bogus");
   });
 
+  // FIN-82 review: the argument-less commands also reject unknown flags.
+  for (const cmd of [["whoami"], ["version"], ["schema"], ["auth", "status"]]) {
+    test(`'${cmd.join(" ")}' rejects an unrecognized flag`, () => {
+      const { exitCode, stdout } = runCli([...cmd, "--bogus", "--json"]);
+      expect(exitCode).toBe(2);
+      expect(JSON.parse(stdout).error.code).toBe("USAGE_ERROR");
+    });
+  }
+
+  // `help` is deliberately exempt — it is the usage command, so it shows help
+  // rather than erroring on unexpected input.
+  test("help is lenient with unknown flags (intentional exception)", () => {
+    const { exitCode, stdout } = runCli(["help", "--bogus", "--json"]);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout).ok).toBe(true);
+  });
+
   test("config path prints the resolved path without requiring a config file", () => {
     const { exitCode, stdout } = runCli(["config", "path", "--json"]);
 

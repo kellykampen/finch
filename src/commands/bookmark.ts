@@ -21,13 +21,12 @@ export async function runBookmarkList(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const getConfig = deps.getConfig ?? readOAuth2Config;
 
-  // Parse + validate flags BEFORE any network/auth, so a typo'd flag is a clean
-  // USAGE_ERROR rather than triggering a live request (FIN-82 review).
+  // Parse AND fully validate flags (including the count value) BEFORE any
+  // network/auth, so a typo'd flag OR a bad count value is a clean USAGE_ERROR
+  // rather than triggering a live request (FIN-82 review). getConfig() is a
+  // local file read, so computing the default here stays off the network.
   const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"], rejectUnknownFlags: true });
   const folderId = values["--folder"];
-
-  const transport = getTransport();
-  const me = await transport.getMe();
 
   const config = getConfig();
   const configuredDefault = config?.defaults?.count;
@@ -38,6 +37,9 @@ export async function runBookmarkList(
 
   const countFlag = values["-n"] !== undefined ? "-n" : "--count";
   const count = resolveCount(values["-n"] ?? values["--count"], defaultCount, countFlag);
+
+  const transport = getTransport();
+  const me = await transport.getMe();
 
   const posts = folderId
     ? await transport.listBookmarksInFolder(me.id, folderId, count)

@@ -39,6 +39,18 @@ describe("runBookmarkList", () => {
     ).rejects.toMatchObject({ code: "USAGE_ERROR" });
   });
 
+  // FIN-82 review: a bad --count value (here a flag-looking token consumed as
+  // the value) is validated before any network call, too.
+  test("rejects a non-integer --count value before resolving the transport", async () => {
+    await expect(
+      runBookmarkList(["--count", "--bogus"], {
+        getTransport: () => {
+          throw new Error("transport must not be reached");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+  });
+
   test("resolves the authenticated user's id then fetches their bookmarks", async () => {
     let capturedUserId: string | undefined;
     let capturedCount: number | undefined;
