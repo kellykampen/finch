@@ -196,6 +196,36 @@ describe("runPost", () => {
     expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-pic.png"] });
   });
 
+  // FIN-82: the =-syntax must reach the media collector, not be silently dropped.
+  test("--media=<path> (=-syntax) also uploads and attaches the image", async () => {
+    const uploadedPaths: string[] = [];
+    let createdWith: { text?: string; mediaIds?: string[] } = {};
+    const altSetFor: Array<{ mediaId: string; text: string }> = [];
+    const transport = fakeTransport({
+      uploadImage: async (path) => {
+        uploadedPaths.push(path);
+        return { media_id: `id-for-${path}` };
+      },
+      setMediaAltText: async (mediaId, text) => {
+        altSetFor.push({ mediaId, text });
+      },
+      createTweet: async (text, _replyToId, mediaIds) => {
+        createdWith = { text, mediaIds };
+        return { id: "1", text };
+      },
+    });
+
+    const result = await runPost(["hello", "--media=pic.png", "--alt=a description"], {
+      getTransport: () => transport,
+    });
+
+    expect(result.data).toEqual({ id: "1", text: "hello" });
+    expect(uploadedPaths).toEqual(["pic.png"]);
+    expect(createdWith).toEqual({ text: "hello", mediaIds: ["id-for-pic.png"] });
+    // The =-syntax --alt reached the alt-text path aligned to the image.
+    expect(altSetFor).toEqual([{ mediaId: "id-for-pic.png", text: "a description" }]);
+  });
+
   test("--media <gif|mp4> uses chunked upload and attaches the returned media ID", async () => {
     const uploadedVideos: string[] = [];
     let imageUploadCalled = false;

@@ -80,6 +80,24 @@ export function parseArgs(
   return { values, bools, positionals };
 }
 
+// FIN-82: rewrite `--flag=value` into `--flag`, `value` for the named flags, so
+// an order-sensitive manual collector (post/thread `--media`/`--alt`, which
+// parseArgs can't model because they're repeatable and index-aligned) accepts
+// the same `=`-syntax parseArgs now supports for every other value flag.
+// Non-matching tokens pass through unchanged.
+export function expandEqSyntax(tokens: string[], flags: string[]): string[] {
+  const out: string[] = [];
+  for (const token of tokens) {
+    const flag = flags.find((f) => token.startsWith(`${f}=`));
+    if (flag !== undefined) {
+      out.push(flag, token.slice(flag.length + 1));
+    } else {
+      out.push(token);
+    }
+  }
+  return out;
+}
+
 const DEFAULT_COUNT = 10;
 const MAX_COUNT = 100;
 

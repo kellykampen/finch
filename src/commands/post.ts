@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolveOAuth2Transport, type XTransport } from "../core/transport";
 import { validatePostText } from "../core/validation";
-import { parseArgs } from "../core/args";
+import { parseArgs, expandEqSyntax } from "../core/args";
 import { FinchError } from "../core/errors";
 
 export interface PostResult {
@@ -79,7 +79,7 @@ function parsePostArgs(argv: string[]): ParsedPostArgs {
   };
 }
 
-export function collectMediaWithAlt(flagRegion: string[]): {
+export function collectMediaWithAlt(rawFlagRegion: string[]): {
   media: string[];
   alt: (string | undefined)[];
   altCount: number;
@@ -88,6 +88,10 @@ export function collectMediaWithAlt(flagRegion: string[]): {
   const alt: (string | undefined)[] = [];
   let currentMediaIndex: number | undefined;
   let altCount = 0;
+
+  // Accept `--media=<v>` / `--alt=<v>` too (FIN-82 =-syntax), by normalizing
+  // them to the space form this order-aligned collector already handles.
+  const flagRegion = expandEqSyntax(rawFlagRegion, ["--media", "--alt"]);
 
   for (let i = 0; i < flagRegion.length; i++) {
     if (flagRegion[i] === "--media") {

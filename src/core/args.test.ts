@@ -1,6 +1,30 @@
 import { describe, test, expect } from "bun:test";
-import { parseArgs, resolveCount } from "./args";
+import { parseArgs, resolveCount, expandEqSyntax } from "./args";
 import { FinchError } from "./errors";
+
+describe("expandEqSyntax", () => {
+  test("splits `--flag=value` into two tokens for the named flags", () => {
+    expect(expandEqSyntax(["--media=a.png", "--alt=hi"], ["--media", "--alt"])).toEqual([
+      "--media",
+      "a.png",
+      "--alt",
+      "hi",
+    ]);
+  });
+
+  test("keeps the space form and other tokens unchanged", () => {
+    expect(expandEqSyntax(["--media", "a.png", "text", "--other=x"], ["--media", "--alt"])).toEqual([
+      "--media",
+      "a.png",
+      "text",
+      "--other=x",
+    ]);
+  });
+
+  test("preserves a value that itself contains '=' (thread's <n>:<path>, etc.)", () => {
+    expect(expandEqSyntax(["--media=0:a=b.png"], ["--media"])).toEqual(["--media", "0:a=b.png"]);
+  });
+});
 
 describe("parseArgs", () => {
   test("collects positionals when no flags are declared", () => {
