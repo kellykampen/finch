@@ -66,6 +66,24 @@ describe("finch skills command (FIN-75)", () => {
     });
   });
 
+  test("treats a name after the -- terminator as a skill name, not a flag (review)", async () => {
+    const { data } = await runSkills(["--", "finch"], { skillPath });
+    expect((data as SkillDetailResult).name).toBe("finch");
+  });
+
+  test("rejects more than one skill name (review)", async () => {
+    await expect(runSkills(["finch", "extra"], { skillPath })).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+    });
+  });
+
+  test("parses CRLF frontmatter (review)", () => {
+    const crlf = SKILL_MD.replace(/\n/g, "\r\n");
+    const summary = parseSkillSummary(crlf);
+    expect(summary.name).toBe("finch");
+    expect(summary.description).toContain("act on X/Twitter");
+  });
+
   test("surfaces a CLIENT_ERROR (with the path) when the SKILL.md is missing", async () => {
     const missing = join(dir, "nope", "SKILL.md");
     const err = await runSkills([], { skillPath: missing }).catch((e) => e);

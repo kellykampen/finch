@@ -35,7 +35,7 @@ export async function readSkillMarkdown(skillPath: string = defaultSkillPath()):
 // frontmatter is a small, known shape, so this avoids pulling in a YAML
 // dependency. Falls back gracefully for a SKILL.md with no frontmatter.
 export function parseSkillSummary(markdown: string): SkillSummary {
-  const frontmatter = markdown.match(/^---\n([\s\S]*?)\n---/);
+  const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   const block = frontmatter?.[1] ?? "";
   const name = block.match(/^name:\s*(.+)$/m)?.[1]?.trim() || "finch";
   return { name, description: extractYamlField(block, "description") };
