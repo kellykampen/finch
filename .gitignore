@@ -6,8 +6,9 @@ out
 dist
 *.tgz
 
-# compiled binary (bun build --compile)
+# compiled binaries (bun build --compile)
 /finch
+/finch-dev-build
 
 # code coverage
 coverage
@@ -38,3 +39,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # planning/orchestration docs — kept on local disk only, not tracked in the repo
 docs/
+
+# git worktree checkouts — local only, not tracked in the repo
+.worktrees/

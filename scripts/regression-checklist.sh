@@ -3,7 +3,7 @@
 # Regression checklist runner for FIN-27.
 #
 # Automates every numbered known-answer check from
-# .claude/orchestration/regression-checklist.md against the compiled Finch
+# ~/.pi-fleet/finch/regression-checklist.md against the compiled Finch
 # binary. Runs in a fully sandboxed HOME + FINCH_CONFIG_PATH for any check
 # that touches ~/.finch/config or runs finch auth / finch config. FIN-77 made
 # the default config path resolve to the real user's canonical
