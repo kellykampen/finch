@@ -898,7 +898,12 @@ function extractMediaId(data: Record<string, unknown> | undefined): string | und
 function extractPublishedPostId(data: unknown): string | undefined {
   if (!data || typeof data !== "object") return undefined;
   const record = data as Record<string, unknown>;
-  for (const field of ["post_id", "id", "tweet_id"]) {
+  // FIN-83: a live E2E (article WITH a cover) proved X actually returns the id
+  // under camelCase `postId` — NOT the `post_id` the docs claim. Accept both
+  // spellings (the diagnostic responseKeys in the error surfaced `postId`), plus
+  // the id/tweet_id conventions, all camel/snake. String ids only: X returns
+  // snowflake ids as strings because they exceed JS number precision.
+  for (const field of ["postId", "post_id", "id", "tweet_id", "tweetId"]) {
     const value = record[field];
     if (typeof value === "string" && value.length > 0) return value;
   }

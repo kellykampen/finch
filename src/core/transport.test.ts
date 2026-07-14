@@ -1428,6 +1428,15 @@ describe("ByokTransport.publishArticleDraft", () => {
     expect(result).toEqual({ post_id: "1800000000000000000" });
   });
 
+  // FIN-83: the real publish response for an article WITH a cover uses camelCase
+  // `postId` (confirmed by a live E2E: post 2076870964483375435 published but the
+  // parser missed it). This is the exact shape that regressed in production.
+  test("parses the real camelCase `postId` key (article-with-cover response shape)", async () => {
+    const transport = transportReturning({ data: { postId: "2076870964483375435" } });
+    const result = await transport.publishArticleDraft("draft-1");
+    expect(result).toEqual({ post_id: "2076870964483375435" });
+  });
+
   test("throws CLIENT_ERROR and surfaces the response's structural keys (no values) when no string id is present", async () => {
     // e.g. a numeric id (JS would already have lost snowflake precision) or an
     // unexpected envelope — the error must name the keys so the real shape is
