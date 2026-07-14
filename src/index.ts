@@ -28,6 +28,7 @@ import {
 } from "./commands/bookmark";
 import { runConfigGet, runConfigSet, runConfigPath } from "./commands/config";
 import { runSchema } from "./commands/schema";
+import { runSkills } from "./commands/skills";
 import { runHelp } from "./commands/help";
 import { resolveDispatchArgs } from "./core/dispatch-args";
 import { runMcp } from "./mcp/server";
@@ -129,6 +130,9 @@ async function dispatch(args: string[]): Promise<{ data: unknown; human: string 
   }
   if (cmd === "config" && sub === "path") {
     return runConfigPath(args.slice(2));
+  }
+  if (cmd === "skills") {
+    return runSkills(args.slice(1));
   }
   if (cmd === "schema") {
     return runSchema();

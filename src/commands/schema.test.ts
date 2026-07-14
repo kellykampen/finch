@@ -32,6 +32,7 @@ const ALL_COMMANDS = [
   "config set",
   "config path",
   "schema",
+  "skills",
   "version",
   "help",
 ];
