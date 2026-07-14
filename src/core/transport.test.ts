@@ -1322,7 +1322,9 @@ describe("ByokTransport.createArticleDraft", () => {
     ]);
   });
 
-  test("includes cover_media when a cover media id is provided", async () => {
+  // FIN-84: X's /2/articles/draft requires media_category on cover_media (a live
+  // 400 proved cover_media: { media_id } alone is rejected). Pin the FULL shape.
+  test("includes cover_media with the required media_category when a cover media id is provided", async () => {
     let capturedRequest: unknown[] = [];
     const rawClient = {
       request: async (...args: unknown[]) => {
@@ -1343,7 +1345,7 @@ describe("ByokTransport.createArticleDraft", () => {
     expect(body).toEqual({
       title: "Covered Article",
       content_state: contentState,
-      cover_media: { media_id: "media-123" },
+      cover_media: { media_id: "media-123", media_category: "tweet_image" },
     });
   });
 
