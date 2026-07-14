@@ -192,9 +192,11 @@ function runInline<T>(fn: () => Promise<T>): Promise<T> {
 
 /** `finch config path`: prints the resolved `~/.finch/config` path. */
 export async function runConfigPath(
-  _argv: string[],
+  argv: string[],
   deps: ConfigDeps = {},
 ): Promise<{ data: { path: string }; human: string }> {
+  // Takes no flags; reject a typo'd one instead of silently ignoring it (FIN-82).
+  parseArgs(argv, { rejectUnknownFlags: true });
   const configPathFn = deps.configPath ?? configPath;
   const path = configPathFn();
   return { data: { path }, human: path };

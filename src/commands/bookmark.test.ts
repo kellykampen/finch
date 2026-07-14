@@ -27,6 +27,18 @@ function fakeConfig(count: number): FinchOAuth2Config {
 }
 
 describe("runBookmarkList", () => {
+  // FIN-82 review: flag validation must precede transport/auth, so a typo is a
+  // clean USAGE_ERROR rather than a live network request.
+  test("rejects an unrecognized flag before resolving the transport", async () => {
+    await expect(
+      runBookmarkList(["--bogus"], {
+        getTransport: () => {
+          throw new Error("transport must not be reached");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+  });
+
   test("resolves the authenticated user's id then fetches their bookmarks", async () => {
     let capturedUserId: string | undefined;
     let capturedCount: number | undefined;
@@ -388,6 +400,17 @@ describe("runBookmarkFolders", () => {
 
     expect(result.data).toEqual({ folders: [] });
     expect(result.human).toBe("No bookmark folders found.");
+  });
+
+  // FIN-82 review: rejects an unknown flag before touching the transport.
+  test("rejects an unrecognized flag without hitting the network", async () => {
+    await expect(
+      runBookmarkFolders(["--bogus"], {
+        getTransport: () => {
+          throw new Error("transport must not be reached");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
   });
 });
 

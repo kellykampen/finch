@@ -21,6 +21,11 @@ export async function runBookmarkList(
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
   const getConfig = deps.getConfig ?? readOAuth2Config;
 
+  // Parse + validate flags BEFORE any network/auth, so a typo'd flag is a clean
+  // USAGE_ERROR rather than triggering a live request (FIN-82 review).
+  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"], rejectUnknownFlags: true });
+  const folderId = values["--folder"];
+
   const transport = getTransport();
   const me = await transport.getMe();
 
@@ -31,10 +36,8 @@ export async function runBookmarkList(
       ? Math.min(configuredDefault, MAX_COUNT)
       : DEFAULT_COUNT;
 
-  const { values } = parseArgs(argv, { valueFlags: ["-n", "--count", "--folder"], rejectUnknownFlags: true });
   const countFlag = values["-n"] !== undefined ? "-n" : "--count";
   const count = resolveCount(values["-n"] ?? values["--count"], defaultCount, countFlag);
-  const folderId = values["--folder"];
 
   const posts = folderId
     ? await transport.listBookmarksInFolder(me.id, folderId, count)
@@ -137,10 +140,13 @@ function formatBookmarkFolders(folders: FinchBookmarkFolder[]): string {
 
 /** `finch bookmark folders`: list the authenticated user's bookmark folders. */
 export async function runBookmarkFolders(
-  _argv: string[],
+  argv: string[],
   deps: BookmarkFoldersDeps = {},
 ): Promise<{ data: { folders: FinchBookmarkFolder[] }; human: string }> {
   const getTransport = deps.getTransport ?? resolveOAuth2Transport;
+
+  // Takes no flags; reject a typo'd one before any network/auth (FIN-82).
+  parseArgs(argv, { rejectUnknownFlags: true });
 
   const transport = getTransport();
   const me = await transport.getMe();
