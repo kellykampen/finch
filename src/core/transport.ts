@@ -723,14 +723,18 @@ export class ByokTransport implements XTransport {
       const res = (await this.rawClient.request("POST", `/2/articles/${encodeURIComponent(draftId)}/publish`, {
         security: [{ OAuth2UserToken: ["tweet.write"] }],
       })) as ItemResult<unknown>;
-      if (!res.data || typeof (res.data as { post_id?: unknown }).post_id !== "string") {
-        throw new FinchError(
-          "CLIENT_ERROR",
-          "X API did not return the published article's post ID",
-          res.errors ?? null,
-        );
+      const postId = extractPublishedPostId(res.data);
+      if (postId === undefined) {
+        // FIN-83: a real publish succeeded on X but returned a shape this
+        // couldn't parse (orphaned post). Surface the response's structural
+        // keys — field names only, never values, so nothing is leaked — so the
+        // real shape is diagnosable if this ever fires again.
+        throw new FinchError("CLIENT_ERROR", "X API did not return the published article's post ID", {
+          responseKeys: res.data && typeof res.data === "object" ? Object.keys(res.data as object) : null,
+          errors: res.errors ?? null,
+        });
       }
-      return { post_id: (res.data as { post_id: string }).post_id };
+      return { post_id: postId };
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "publishArticleDraft");
@@ -872,6 +876,24 @@ function extractMediaId(data: Record<string, unknown> | undefined): string | und
   if (!data) return undefined;
   const id = data.id ?? data.media_id;
   return typeof id === "string" ? id : undefined;
+}
+
+// FIN-83: pull the published article post's ID from the publish response.
+// The X docs document `data.post_id`, but a real publish returned a shape this
+// couldn't parse while the article DID publish — so accept the id from whichever
+// field X actually uses (`post_id`, or the `id`/`tweet_id` convention every
+// other X v2 created-object response uses). Only STRING ids are accepted: X
+// returns snowflake ids as strings precisely because they exceed JS number
+// precision, so a numeric id here would already be corrupted and must not be
+// trusted.
+function extractPublishedPostId(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const record = data as Record<string, unknown>;
+  for (const field of ["post_id", "id", "tweet_id"]) {
+    const value = record[field];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
 }
 
 function extractProcessingInfo(data: Record<string, unknown> | undefined): ProcessingInfo | undefined {

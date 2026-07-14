@@ -1380,6 +1380,81 @@ describe("ByokTransport.createArticleDraft", () => {
   });
 });
 
+// FIN-83: a real publish succeeded on X but returned a shape publishArticleDraft
+// couldn't parse, so it reported CLIENT_ERROR while the article was live
+// (orphaned post). These exercise the raw-response parsing directly (mocking
+// rawClient.request), which the command-level tests fake away entirely.
+describe("ByokTransport.publishArticleDraft", () => {
+  function transportReturning(response: unknown, captured?: (args: unknown[]) => void): ByokTransport {
+    return new ByokTransport(
+      {
+        ...unusedUsersClient,
+        client: {
+          request: async (...args: unknown[]) => {
+            captured?.(args);
+            return response;
+          },
+        },
+      } as typeof unusedUsersClient,
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+  }
+
+  test("parses the documented { data: { post_id } } shape and posts to the publish endpoint", async () => {
+    let capturedArgs: unknown[] = [];
+    const transport = transportReturning({ data: { post_id: "1346889436626259968" } }, (a) => {
+      capturedArgs = a;
+    });
+
+    const result = await transport.publishArticleDraft("draft-42");
+
+    expect(result).toEqual({ post_id: "1346889436626259968" });
+    expect(capturedArgs[0]).toBe("POST");
+    expect(capturedArgs[1]).toBe("/2/articles/draft-42/publish");
+  });
+
+  test("falls back to data.id when the id is under the standard X v2 field, not post_id", async () => {
+    const transport = transportReturning({ data: { id: "1799999999999999999" } });
+    const result = await transport.publishArticleDraft("draft-1");
+    expect(result).toEqual({ post_id: "1799999999999999999" });
+  });
+
+  test("falls back to data.tweet_id", async () => {
+    const transport = transportReturning({ data: { tweet_id: "1800000000000000000" } });
+    const result = await transport.publishArticleDraft("draft-1");
+    expect(result).toEqual({ post_id: "1800000000000000000" });
+  });
+
+  test("throws CLIENT_ERROR and surfaces the response's structural keys (no values) when no string id is present", async () => {
+    // e.g. a numeric id (JS would already have lost snowflake precision) or an
+    // unexpected envelope — the error must name the keys so the real shape is
+    // diagnosable, without leaking any values.
+    const transport = transportReturning({ data: { post_id: 12345, foo: "bar" } });
+    try {
+      await transport.publishArticleDraft("draft-1");
+      throw new Error("expected publishArticleDraft to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      const detail = (err as FinchError).detail as { responseKeys: string[] };
+      expect(detail.responseKeys).toEqual(["post_id", "foo"]);
+    }
+  });
+
+  test("throws CLIENT_ERROR when the underlying client is not available", async () => {
+    const transport = new ByokTransport(unusedUsersClient, unusedPostsClient, unusedMediaClient);
+    try {
+      await transport.publishArticleDraft("draft-1");
+      throw new Error("expected publishArticleDraft to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(FinchError);
+      expect((err as FinchError).code).toBe("CLIENT_ERROR");
+      expect((err as FinchError).message).toBe("X SDK client does not expose article draft publishing");
+    }
+  });
+});
+
 describe("ByokTransport.listBookmarksInFolder", () => {
   test("uses the SDK getBookmarksByFolderId method and shapes tweet records", async () => {
     let capturedArgs: unknown[] = [];
