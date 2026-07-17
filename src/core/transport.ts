@@ -43,6 +43,11 @@ export interface FinchTweet {
   text: string;
   author_id: string | null;
   created_at: string | null;
+  // Populated only when the caller requests the author_id expansion (currently
+  // bookmark listing), so single-call author resolution stays opt-in and other
+  // tweet-returning commands keep their existing output shape.
+  author_username?: string;
+  author_name?: string;
 }
 
 export interface CreatedTweet {
@@ -141,6 +146,9 @@ interface BookmarkFolderLike {
 interface ListResult<T> {
   data?: T[];
   errors?: unknown;
+  // Present when an expansion (e.g. author_id) is requested; carries the
+  // hydrated related objects the tweets reference by id.
+  includes?: { users?: UserLike[] };
 }
 
 interface ItemResult<T> {
@@ -151,6 +159,8 @@ interface ItemResult<T> {
 interface ListOptions {
   maxResults?: number;
   tweetFields?: string[];
+  expansions?: string[];
+  userFields?: string[];
 }
 
 // The engagement endpoints' response `data` is untyped in the SDK
@@ -239,6 +249,10 @@ const TWEET_FIELDS = ["author_id", "created_at"];
 // Requested on every user-profile call so `description`/`public_metrics` are
 // populated — the X API only returns `id`/`username`/`name` by default.
 const USER_FIELDS = ["description", "public_metrics"];
+// Requested on bookmark listing so each tweet's author username/name resolve in
+// a single call (via `includes.users`) rather than a separate lookup-by-id.
+const AUTHOR_EXPANSIONS = ["author_id"];
+const AUTHOR_USER_FIELDS = ["username", "name"];
 
 const VIDEO_CHUNK_SIZE_BYTES = 5 * 1024 * 1024;
 const VIDEO_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
@@ -249,13 +263,31 @@ const MEDIA_WRITE_AUTH_ERROR =
 const MEDIA_UPLOAD_FORBIDDEN_ERROR =
   "X denied media upload. The v2 media endpoints require OAuth2 user context with media.write. Run `finch auth` to re-authorize; if `finch config get auth.scopes` already includes media.write, verify your X app has v2 media endpoint access.";
 
-function shapeTweet(t: TweetLike): FinchTweet {
-  return {
+function shapeTweet(t: TweetLike, users?: Map<string, UserLike>): FinchTweet {
+  const tweet: FinchTweet = {
     id: t.id,
     text: t.text,
     author_id: t.authorId ?? null,
     created_at: t.createdAt ?? null,
   };
+  // Only attach author fields when the caller hydrated the author_id expansion,
+  // so commands that don't request it keep their prior output shape.
+  if (users && t.authorId) {
+    const author = users.get(t.authorId);
+    if (author) {
+      tweet.author_username = author.username;
+      tweet.author_name = author.name;
+    }
+  }
+  return tweet;
+}
+
+/** Index `includes.users` by id for O(1) author lookup during tweet shaping. */
+function buildUserMap(users?: UserLike[]): Map<string, UserLike> | undefined {
+  if (!users || users.length === 0) return undefined;
+  const map = new Map<string, UserLike>();
+  for (const user of users) map.set(user.id, user);
+  return map;
 }
 
 function isBookmarkFolderLike(value: unknown): value is BookmarkFolderLike {
@@ -329,7 +361,7 @@ export class ByokTransport implements XTransport {
         maxResults,
         tweetFields: TWEET_FIELDS,
       });
-      return (res.data ?? []).map(shapeTweet);
+      return (res.data ?? []).map((t) => shapeTweet(t));
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "searchRecent");
@@ -342,7 +374,7 @@ export class ByokTransport implements XTransport {
         maxResults,
         tweetFields: TWEET_FIELDS,
       });
-      return (res.data ?? []).map(shapeTweet);
+      return (res.data ?? []).map((t) => shapeTweet(t));
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "userTweets");
@@ -355,7 +387,7 @@ export class ByokTransport implements XTransport {
         maxResults,
         tweetFields: TWEET_FIELDS,
       });
-      return (res.data ?? []).map(shapeTweet);
+      return (res.data ?? []).map((t) => shapeTweet(t));
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "homeTimeline");
@@ -367,8 +399,11 @@ export class ByokTransport implements XTransport {
       const res = await this.usersClient.getBookmarks(userId, {
         maxResults,
         tweetFields: TWEET_FIELDS,
+        expansions: AUTHOR_EXPANSIONS,
+        userFields: AUTHOR_USER_FIELDS,
       });
-      return (res.data ?? []).map(shapeTweet);
+      const users = buildUserMap(res.includes?.users);
+      return (res.data ?? []).map((t) => shapeTweet(t, users));
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err);
@@ -442,8 +477,11 @@ export class ByokTransport implements XTransport {
       const res = await this.usersClient.getBookmarksByFolderId(userId, folderId, {
         maxResults,
         tweetFields: TWEET_FIELDS,
+        expansions: AUTHOR_EXPANSIONS,
+        userFields: AUTHOR_USER_FIELDS,
       });
-      return (res.data ?? []).map(shapeTweet);
+      const users = buildUserMap(res.includes?.users);
+      return (res.data ?? []).map((t) => shapeTweet(t, users));
     } catch (err) {
       if (err instanceof FinchError) throw err;
       throw mapSdkError(err, "listBookmarksInFolder");
