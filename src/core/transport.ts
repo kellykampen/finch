@@ -26,8 +26,8 @@ export interface FinchTweet {
   // Populated only when the caller requests the author_id expansion (currently
   // bookmark listing), so single-call author resolution stays opt-in and other
   // tweet-returning commands keep their existing output shape.
-  author_username?: string | null;
-  author_name?: string | null;
+  author_username?: string;
+  author_name?: string;
 }
 
 export interface CreatedTweet {
