@@ -886,6 +886,33 @@ describe("ByokTransport.listBookmarks", () => {
     expect(posts).toEqual([{ id: "1", text: "saved", author_id: null, created_at: null }]);
   });
 
+  test("hydrates author_username/author_name from includes.users", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarks: async () => ({
+          data: [{ id: "1", text: "saved", authorId: "42", createdAt: "2026-07-01T00:00:00.000Z" }],
+          includes: { users: [{ id: "42", username: "kellyk", name: "Kelly K" }] },
+        }),
+      },
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    const posts = await transport.listBookmarks("42", 10);
+
+    expect(posts).toEqual([
+      {
+        id: "1",
+        text: "saved",
+        author_id: "42",
+        created_at: "2026-07-01T00:00:00.000Z",
+        author_username: "kellyk",
+        author_name: "Kelly K",
+      },
+    ]);
+  });
+
   test("passes maxResults and tweetFields to the SDK", async () => {
     let capturedOptions: unknown;
     const transport = new ByokTransport(
@@ -902,7 +929,12 @@ describe("ByokTransport.listBookmarks", () => {
 
     await transport.listBookmarks("42", 25);
 
-    expect(capturedOptions).toEqual({ maxResults: 25, tweetFields: ["author_id", "created_at"] });
+    expect(capturedOptions).toEqual({
+      maxResults: 25,
+      tweetFields: ["author_id", "created_at"],
+      expansions: ["author_id"],
+      userFields: ["username", "name"],
+    });
   });
 
   test("maps a 401 ApiError to AUTH_ERROR", async () => {
@@ -1384,7 +1416,16 @@ describe("ByokTransport.listBookmarksInFolder", () => {
       { id: "1", text: "saved in folder", author_id: "7", created_at: "2026-01-01T00:00:00.000Z" },
       { id: "2", text: "minimal", author_id: null, created_at: null },
     ]);
-    expect(capturedArgs).toEqual(["42", "folder-123", { maxResults: 10, tweetFields: ["author_id", "created_at"] }]);
+    expect(capturedArgs).toEqual([
+      "42",
+      "folder-123",
+      {
+        maxResults: 10,
+        tweetFields: ["author_id", "created_at"],
+        expansions: ["author_id"],
+        userFields: ["username", "name"],
+      },
+    ]);
   });
 
   test("passes maxResults through to the SDK", async () => {
@@ -1403,7 +1444,12 @@ describe("ByokTransport.listBookmarksInFolder", () => {
 
     await transport.listBookmarksInFolder("42", "folder-123", 25);
 
-    expect(capturedOptions).toEqual({ maxResults: 25, tweetFields: ["author_id", "created_at"] });
+    expect(capturedOptions).toEqual({
+      maxResults: 25,
+      tweetFields: ["author_id", "created_at"],
+      expansions: ["author_id"],
+      userFields: ["username", "name"],
+    });
   });
 
   test("maps a Premium-gated 403 to a clear CLIENT_ERROR", async () => {

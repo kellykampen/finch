@@ -202,7 +202,7 @@ export const COMMAND_SCHEMAS: CommandSchemaEntry[] = [
     flags: ["--json", "-n <count>", "--count <count>", "--folder <id>"],
     positionals: [],
     endpoint: "GET /2/users/:id/bookmarks or GET /2/users/:id/bookmarks/folders/:folder_id/bookmarks",
-    dataShape: "{ posts: [{ id, text, author_id, created_at }] }",
+    dataShape: "{ posts: [{ id, text, author_id, created_at, author_username, author_name }] }",
   },
   {
     name: "bookmark folders",
