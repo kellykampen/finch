@@ -1428,6 +1428,33 @@ describe("ByokTransport.listBookmarksInFolder", () => {
     ]);
   });
 
+  test("hydrates author_username/author_name from includes.users", async () => {
+    const transport = new ByokTransport(
+      {
+        ...unusedUsersClient,
+        getBookmarksByFolderId: async () => ({
+          data: [{ id: "1", text: "saved in folder", authorId: "42", createdAt: "2026-07-01T00:00:00.000Z" }],
+          includes: { users: [{ id: "42", username: "kellyk", name: "Kelly K" }] },
+        }),
+      },
+      unusedPostsClient,
+      unusedMediaClient,
+    );
+
+    const posts = await transport.listBookmarksInFolder("42", "folder-123", 10);
+
+    expect(posts).toEqual([
+      {
+        id: "1",
+        text: "saved in folder",
+        author_id: "42",
+        created_at: "2026-07-01T00:00:00.000Z",
+        author_username: "kellyk",
+        author_name: "Kelly K",
+      },
+    ]);
+  });
+
   test("passes maxResults through to the SDK", async () => {
     let capturedOptions: unknown;
     const transport = new ByokTransport(
